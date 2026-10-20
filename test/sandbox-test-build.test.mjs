@@ -39,7 +39,7 @@ function setup({ localTs = false } = {}) {
 
 /** Chạy probe; `sandboxed` = trong bwrap (unshare-pid) với CODER_SANDBOXED=1. */
 function probe(h, cmds, { sandboxed = false, envFlag = sandboxed, coderHome = CODER, rewrites = false } = {}) {
-	const env = { PATH: process.env.PATH, HOME: process.env.HOME, PI_CODING_AGENT_DIR: h.agent, CODER_WORKDIR: h.work };
+	const env = { PATH: process.env.PATH, HOME: process.env.HOME, PI_CODING_AGENT_DIR: h.agent /* probe nạp thẳng thư viện lõi */, CODER_WORKDIR: h.work };
 	if (coderHome) env.CODER_HOME = coderHome;
 	if (rewrites) env.PROBE_REWRITES = "1";
 	if (envFlag) env.CODER_SANDBOXED = "1";
@@ -170,7 +170,8 @@ test("S8: coder-sandbox: có bun, CODER_SANDBOXED=1, PID1=bwrap, không ghi đư
 	cleanups.push(root);
 	const here = path.join(root, "tools/coder");
 	fs.mkdirSync(path.join(root, "tools/pi"), { recursive: true });
-	fs.mkdirSync(here, { recursive: true });
+	fs.mkdirSync(path.join(here, "lib"), { recursive: true });
+	fs.copyFileSync(path.join(CODER, "lib/agent-dir.sh"), path.join(here, "lib/agent-dir.sh"));
 	fs.copyFileSync(path.join(CODER, "coder-sandbox"), path.join(here, "coder-sandbox"));
 	fs.chmodSync(path.join(here, "coder-sandbox"), 0o755);
 	const agent = path.join(root, "agent");
@@ -187,7 +188,7 @@ test("S8: coder-sandbox: có bun, CODER_SANDBOXED=1, PID1=bwrap, không ghi đư
 		`touch ${here}/x 2>/dev/null && echo TOOL=ok || echo TOOL=fail`,
 		"node -e \"fetch('http://1.1.1.1',{signal:AbortSignal.timeout(3000)}).then(()=>console.log('NET=ok'),()=>console.log('NET=fail'))\"",
 	].join("; ");
-	const env = { PATH: process.env.PATH, HOME: process.env.HOME, PI_CODING_AGENT_DIR: agent, CODER_WORKDIR: work, CODER_SANDBOX_NET: "off", CODER_ENV_FILE: path.join(root, "none.env") };
+	const env = { PATH: process.env.PATH, HOME: process.env.HOME, CODER_AGENT_DIR: agent, CODER_WORKDIR: work, CODER_SANDBOX_NET: "off", CODER_ENV_FILE: path.join(root, "none.env") };
 	const r = spawnSync(path.join(here, "coder-sandbox"), ["exec", "--", "sh", "-c", script], { env, encoding: "utf8", timeout: 30000 });
 	assert.equal(r.status, 0, r.stderr);
 	for (const want of ["SBX=1", "PID1=bwrap", "BUN=ok", "WORK=ok", "TMP=done", "OUT=fail", "TOOL=fail", "NET=fail"]) assert.match(r.stdout, new RegExp(`^${want}$`, "m"), r.stdout + r.stderr);
@@ -224,7 +225,7 @@ test("S10: sandbox lồng: không key trong env, không mạng, không đọc đ
 	const here = path.join(root, "tools/coder");
 	fs.mkdirSync(path.join(root, "tools/pi"), { recursive: true });
 	fs.mkdirSync(path.join(here, "lib"), { recursive: true });
-	for (const f of ["coder-sandbox", "lib/sandbox-exec.sh", "lib/secret-files.mjs"]) fs.copyFileSync(path.join(CODER, f), path.join(here, f));
+	for (const f of ["coder-sandbox", "lib/sandbox-exec.sh", "lib/secret-files.mjs", "lib/agent-dir.sh"]) fs.copyFileSync(path.join(CODER, f), path.join(here, f));
 	fs.cpSync(path.join(CODER, "lib/nested-bin"), path.join(here, "lib/nested-bin"), { recursive: true });
 	fs.cpSync(path.join(CODER, "agent/extensions/bot-permissions"), path.join(here, "agent/extensions/bot-permissions"), { recursive: true });
 	fs.cpSync(path.join(CODER, "vendor/node_modules/typescript"), path.join(here, "vendor/node_modules/typescript"), { recursive: true });
@@ -288,7 +289,7 @@ test("mạng: fetch và TCP connect ra ngoài đều lỗi", async () => {
 		`${W} -- 'bunx -p typescript@5 tsc --version' 2>/dev/null && echo SHIM_RANGE=ok || echo SHIM_RANGE=refused`,
 	].join("; ");
 	const env = {
-		PATH: process.env.PATH, HOME: process.env.HOME, PI_CODING_AGENT_DIR: agent, CODER_WORKDIR: work,
+		PATH: process.env.PATH, HOME: process.env.HOME, CODER_AGENT_DIR: agent, CODER_WORKDIR: work,
 		XAI_API_KEY: FAKE, COMMANDCODE_API_KEY: FAKE, EXA_API_KEY: FAKE, MY_SECRET_TOKEN: FAKE, CODER_PASS_ENV: "MY_SECRET_TOKEN", NODE_ENV: "test",
 	};
 	const r = spawnSync(path.join(here, "coder-sandbox"), ["exec", "--", "sh", "-c", script], { env, encoding: "utf8", timeout: 120000 });
@@ -304,14 +305,14 @@ function fakeCoder(root) {
 	const here = path.join(root, "tools/coder");
 	fs.mkdirSync(path.join(root, "tools/pi"), { recursive: true });
 	fs.mkdirSync(path.join(here, "lib"), { recursive: true });
-	for (const f of ["coder-sandbox", "lib/sandbox-exec.sh", "lib/secret-files.mjs"]) fs.copyFileSync(path.join(CODER, f), path.join(here, f));
+	for (const f of ["coder-sandbox", "lib/sandbox-exec.sh", "lib/secret-files.mjs", "lib/agent-dir.sh"]) fs.copyFileSync(path.join(CODER, f), path.join(here, f));
 	fs.cpSync(path.join(CODER, "lib/nested-bin"), path.join(here, "lib/nested-bin"), { recursive: true });
 	fs.cpSync(path.join(CODER, "agent/extensions/bot-permissions"), path.join(here, "agent/extensions/bot-permissions"), { recursive: true });
 	for (const f of ["coder-sandbox", "lib/sandbox-exec.sh", "lib/nested-bin/bunx"]) fs.chmodSync(path.join(here, f), 0o755);
 	return here;
 }
 const runSbx = (here, work, script, extra = {}) => {
-	const env = { PATH: process.env.PATH, HOME: process.env.HOME, PI_CODING_AGENT_DIR: path.join(here, "agent"), CODER_WORKDIR: work, ...extra };
+	const env = { PATH: process.env.PATH, HOME: process.env.HOME, CODER_AGENT_DIR: path.join(here, "agent"), CODER_WORKDIR: work, ...extra };
 	const r = spawnSync(path.join(here, "coder-sandbox"), ["exec", "--", "sh", "-c", script], { env, encoding: "utf8", timeout: 60000 });
 	return { status: r.status, out: r.stdout + r.stderr };
 };

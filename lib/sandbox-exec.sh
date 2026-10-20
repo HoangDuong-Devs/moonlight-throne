@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # sandbox-exec.sh -- '<lệnh>' : chạy MỘT lệnh bash (đã qua bot-permissions) trong sandbox LỒNG (bwrap thứ hai) bên trong coder-sandbox.
 # bot-permissions tự bọc mọi lệnh khớp bash.sandbox (test/build chạy mã của repo) bằng script này khi đang trong coder-sandbox.
-# Lớp lồng: KHÔNG mạng (--unshare-net), PID/IPC/UTS riêng (+ /proc mới: không đọc được environ của Pi),
+# Lớp lồng: KHÔNG mạng (--unshare-net), PID/IPC/UTS riêng (+ /proc mới: không đọc được environ của lõi agent),
 # env theo ALLOWLIST (--clearenv; không key model nào lọt vào), $HOME + /tmp + /run tmpfs mới, agent-dir bị phủ tmpfs
 # (auth.json, models-store.json, sessions, grants... không thấy), .env của coder + mọi file secret trong workdir (lib/secret-files.mjs) bị che, bots/ bị che, .git chỉ-đọc.
-# Chỉ thư mục làm việc ghi được. Pi (tiến trình cha) vẫn giữ mạng + key.
+# Chỉ thư mục làm việc ghi được. Lõi agent (tiến trình cha) vẫn giữ mạng + key.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 [ "${1:-}" = "--" ] && shift
@@ -12,7 +12,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CMD="$1"
 command -v bwrap >/dev/null || { echo "sandbox-exec: không có bwrap" >&2; exit 127; }
 WORKDIR="$(readlink -f "${CODER_WORKDIR:-$PWD}")"
-AGENT="$(readlink -f "${PI_CODING_AGENT_DIR:-$HERE/agent}")"
+. "$HERE/lib/agent-dir.sh"
+AGENT="$(readlink -f "$(coder_agent_dir "$HERE/agent")")"
 NODE_BIN="$(command -v node)" || { echo "sandbox-exec: không thấy node" >&2; exit 127; }
 NODE_DIR="$(dirname "$(readlink -f "$NODE_BIN")")"
 BUN_DIR=""; B="$(command -v bun 2>/dev/null || true)"; [ -n "$B" ] && BUN_DIR="$(dirname "$(readlink -f "$B")")"

@@ -79,7 +79,7 @@ Blocked by bot policy [needs_permission]: Hành động này cần bot điều p
 
 Cùng thông tin có trong luồng JSON dưới dạng event `entry_appended` (entry `customType: "permission_request"`) và trong file `permission-requests/<id>.json` (thêm `status`, `createdAt`). Bot nên dùng `--session-id` cố định để gọi lại đúng session.
 
-CLI (`node lib/permissions-cli.mjs`, Node thuần; thêm `--json` để xuất JSON một dòng; `--agent-dir DIR` nếu cần, mặc định `$PI_CODING_AGENT_DIR` hoặc `<coder>/agent`):
+CLI (`node lib/permissions-cli.mjs`, Node thuần; thêm `--json` để xuất JSON một dòng; `--agent-dir DIR` nếu cần, mặc định `$CODER_AGENT_DIR` hoặc `<coder>/agent`):
 
 | Lệnh | Ý nghĩa |
 |---|---|

@@ -1,4 +1,4 @@
-// Logic thuần của tool webfetch / websearch (không phụ thuộc Pi) để test trực tiếp bằng node.
+// Logic thuần của tool webfetch / websearch (không phụ thuộc lõi agent) để test trực tiếp bằng node.
 import { lookup } from "node:dns/promises"
 import { readFileSync } from "node:fs"
 import { isIP } from "node:net"

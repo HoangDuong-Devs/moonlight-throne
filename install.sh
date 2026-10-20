@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Cài đặt/kiểm tra coder (idempotent, chạy lại an toàn).
-#   ./install.sh            kiểm tra + cài những gì thiếu (clone pi ghim commit, npm install/build, tạo .env)
+#   ./install.sh            kiểm tra + cài những gì thiếu (clone lõi agent ghim commit, npm install/build, tạo .env)
 #   ./install.sh --check    chỉ kiểm tra, không đổi gì; mã thoát != 0 nếu có mục FAIL
-#   ./install.sh --no-build không npm install/build (vẫn clone pi nếu thiếu)
+#   ./install.sh --no-build không npm install/build (vẫn clone lõi agent nếu thiếu)
 # Không bao giờ ghi đè .env có sẵn; không in giá trị key.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TOOLS="$(cd "$HERE/.." && pwd)"
-PI="$TOOLS/pi"
-CLI="$PI/packages/coding-agent/dist/bundle/cli.js"
+ENGINE="$TOOLS/pi"
+CLI="$ENGINE/packages/coding-agent/dist/bundle/cli.js"
 CHECK=0; NOBUILD=0
 for a in "$@"; do
   case "$a" in
@@ -36,33 +36,33 @@ else add FAIL node "không tìm thấy (cần >= $MIN)"; fi
 if command -v git >/dev/null; then add OK git "$(git --version)"; else add FAIL git "không tìm thấy"; fi
 if command -v bwrap >/dev/null; then add OK bwrap "có (coder-sandbox dùng được)"; else add WARN bwrap "không có: chỉ dùng ./coder, không dùng coder-sandbox"; fi
 
-# 3. pi ở đúng commit
+# 3. lõi agent ở đúng commit (thư mục ../pi, mục "pi" trong MANIFEST)
 PINNED=""
 command -v node >/dev/null && [ -f "$TOOLS/MANIFEST.json" ] && PINNED="$(node -e 'const t=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).tools.find(x=>x.name==="pi");console.log(t?t.commit:"")' "$TOOLS/MANIFEST.json")"
-if [ ! -d "$PI/.git" ] && [ ! -f "$PI/.git" ]; then
-  if [ $CHECK = 1 ]; then add FAIL pi "chưa có $PI (chạy ./install.sh để clone)"
+if [ ! -d "$ENGINE/.git" ] && [ ! -f "$ENGINE/.git" ]; then
+  if [ $CHECK = 1 ]; then add FAIL engine "chưa có $ENGINE (chạy ./install.sh để clone)"
   elif [ -x "$TOOLS/clone-all.sh" ] && command -v git >/dev/null; then
-    if "$TOOLS/clone-all.sh" pi >/dev/null 2>&1; then add OK pi "đã clone, ghim ${PINNED:0:12}"; else add FAIL pi "clone lỗi (xem: $TOOLS/clone-all.sh pi)"; fi
-  else add FAIL pi "chưa có và không gọi được clone-all.sh/git"; fi
+    if "$TOOLS/clone-all.sh" pi >/dev/null 2>&1; then add OK engine "đã clone, ghim ${PINNED:0:12}"; else add FAIL engine "clone lỗi (xem: $TOOLS/clone-all.sh pi)"; fi
+  else add FAIL engine "chưa có và không gọi được clone-all.sh/git"; fi
 else
-  H="$(git -C "$PI" rev-parse HEAD 2>/dev/null || echo '?')"
-  if [ -z "$PINNED" ]; then add WARN pi "có, nhưng không đọc được commit ghim"
-  elif [ "$H" = "$PINNED" ]; then add OK pi "commit ghim ${H:0:12}"
-  else add WARN pi "HEAD ${H:0:12} khác commit ghim ${PINNED:0:12} (không tự đổi; dùng clone-all.sh --update pi)"; fi
+  H="$(git -C "$ENGINE" rev-parse HEAD 2>/dev/null || echo '?')"
+  if [ -z "$PINNED" ]; then add WARN engine "có, nhưng không đọc được commit ghim"
+  elif [ "$H" = "$PINNED" ]; then add OK engine "commit ghim ${H:0:12}"
+  else add WARN engine "HEAD ${H:0:12} khác commit ghim ${PINNED:0:12} (không tự đổi; dùng clone-all.sh --update pi)"; fi
 fi
 
 # 4. dist (npm install + build)
 LOGDIR=""
 if [ -f "$CLI" ]; then add OK build "có $CLI"
-elif [ $CHECK = 1 ] || [ $NOBUILD = 1 ]; then add FAIL build "chưa build Pi ($CLI)"
-elif [ ! -d "$PI" ]; then add FAIL build "không có pi để build"
+elif [ $CHECK = 1 ] || [ $NOBUILD = 1 ]; then add FAIL build "chưa build lõi agent ($CLI)"
+elif [ ! -d "$ENGINE" ]; then add FAIL build "không có lõi agent để build"
 elif ! command -v npm >/dev/null; then add FAIL build "thiếu npm"
 else
   LOGDIR="$(mktemp -d "${TMPDIR:-/tmp}/coder-install.XXXXXX")"
   echo "Đang npm install (log: $LOGDIR/install.log) ..."
-  if (cd "$PI" && npm install --no-audit --no-fund) >"$LOGDIR/install.log" 2>&1; then
+  if (cd "$ENGINE" && npm install --no-audit --no-fund) >"$LOGDIR/install.log" 2>&1; then
     echo "Đang npm run build (log: $LOGDIR/build.log) ..."
-    if (cd "$PI" && npm run build) >"$LOGDIR/build.log" 2>&1 && [ -f "$CLI" ]; then add OK build "đã build ($LOGDIR)"
+    if (cd "$ENGINE" && npm run build) >"$LOGDIR/build.log" 2>&1 && [ -f "$CLI" ]; then add OK build "đã build ($LOGDIR)"
     else add FAIL build "build lỗi, 20 dòng cuối: $LOGDIR/build.log"; tail -n 20 "$LOGDIR/build.log" >&2; fi
   else add FAIL build "npm install lỗi, 20 dòng cuối: $LOGDIR/install.log"; tail -n 20 "$LOGDIR/install.log" >&2; fi
 fi
@@ -84,7 +84,7 @@ if [ -e "$ENVF" ]; then
 elif [ $CHECK = 1 ]; then add WARN ".env" "chưa có (./install.sh sẽ tạo từ .env.example)"
 elif [ ! -f "$HERE/.env.example" ]; then add FAIL ".env" "thiếu .env.example"
 else
-  ( umask 077; { grep -v '^PI_CODING_AGENT_DIR=' "$HERE/.env.example"; echo "PI_CODING_AGENT_DIR=$HERE/agent"; } > "$ENVF" ) \
+  ( umask 077; { grep -v -E '^(CODER_AGENT_DIR|PI_CODING_AGENT_DIR)=' "$HERE/.env.example"; echo "CODER_AGENT_DIR=$HERE/agent"; } > "$ENVF" ) \
     && chmod 600 "$ENVF" && add OK ".env" "đã tạo từ .env.example (chmod 600), cần điền key" || add FAIL ".env" "không tạo được"
 fi
 

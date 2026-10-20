@@ -1,8 +1,8 @@
 /**
- * Extension `subagent` (kiểu opencode) cho Pi.
+ * Extension `subagent` (kiểu opencode) cho coder.
  *
  * - Tool `subagent` {agent, description, prompt, model?, sessionID?, background?}
- *   chạy một tiến trình `pi` con với phiên riêng (ngữ cảnh sạch) lưu ở
+ *   chạy một tiến trình agent con với phiên riêng (ngữ cảnh sạch) lưu ở
  *   <agent-dir>/sessions/subagents. Trả về sessionID để gọi lại và tiếp tục
  *   đúng cuộc hội thoại con (resume).
  * - foreground: trả kết quả cuối. background: trả ngay {sessionID, status:"running"},
@@ -12,9 +12,9 @@
  *   (explore...) không bao giờ có quyền ghi.
  *
  * Cấu hình tùy chọn: <agent-dir>/subagent.json (hoặc biến môi trường):
- *   maxDepth (PI_SUBAGENT_MAX_DEPTH, mặc định 2)
- *   maxBackground (PI_SUBAGENT_MAX_BACKGROUND, mặc định 4)
- *   timeoutMs (PI_SUBAGENT_TIMEOUT_MS, mặc định 600000)
+ *   maxDepth (CODER_SUBAGENT_MAX_DEPTH, mặc định 2)
+ *   maxBackground (CODER_SUBAGENT_MAX_BACKGROUND, mặc định 4)
+ *   timeoutMs (CODER_SUBAGENT_TIMEOUT_MS, mặc định 600000)
  *   allowProjectAgents (mặc định false: chỉ nạp <agent-dir>/agents)
  *   waitForBackground (mặc định true: ở chế độ -p/json, cha chờ job nền xong rồi nhận thông báo)
  *   detached (mặc định false: job nền chạy TÁCH RỜI, sống tiếp sau khi cha thoát; tham số tool `detached` ghi đè)
@@ -61,19 +61,20 @@ function loadConfig(): Config {
 		file = JSON.parse(fs.readFileSync(path.join(getAgentDir(), "subagent.json"), "utf-8"));
 	} catch {}
 	const num = (env: string, key: string, def: number) => {
-		const v = Number(process.env[env] ?? file[key]);
-		return Number.isFinite(v) && v >= 0 && (process.env[env] ?? file[key]) !== undefined ? v : def;
+		const raw = process.env[env] ?? process.env[env.replace(/^CODER_/, "PI_")] ?? file[key]; // PI_*: tên cũ, vẫn nhận
+		const v = Number(raw);
+		return Number.isFinite(v) && v >= 0 && raw !== undefined ? v : def;
 	};
 	return {
-		maxDepth: num("PI_SUBAGENT_MAX_DEPTH", "maxDepth", 2),
-		maxBackground: num("PI_SUBAGENT_MAX_BACKGROUND", "maxBackground", 4),
-		timeoutMs: num("PI_SUBAGENT_TIMEOUT_MS", "timeoutMs", 600_000),
+		maxDepth: num("CODER_SUBAGENT_MAX_DEPTH", "maxDepth", 2),
+		maxBackground: num("CODER_SUBAGENT_MAX_BACKGROUND", "maxBackground", 4),
+		timeoutMs: num("CODER_SUBAGENT_TIMEOUT_MS", "timeoutMs", 600_000),
 		allowProjectAgents: file.allowProjectAgents === true,
 		waitForBackground: file.waitForBackground !== false,
 		detached: file.detached === true,
 		strictParent: file.strictParent === "always" ? "always" : file.strictParent !== false,
 		rootKey: validKey(process.env.CODER_JOB_NAMESPACE) ?? validKey(file.rootKey),
-		retentionDays: num("PI_SUBAGENT_RETENTION_DAYS", "retentionDays", 7),
+		retentionDays: num("CODER_SUBAGENT_RETENTION_DAYS", "retentionDays", 7),
 	};
 }
 
@@ -82,10 +83,10 @@ const SESSION_ID_RE = /^[A-Za-z0-9._-]{1,100}$/;
 const OUTPUT_CAP = 50 * 1024;
 
 const currentDepth = () => {
-	const n = Number(process.env.PI_SUBAGENT_DEPTH);
+	const n = Number(process.env.CODER_SUBAGENT_DEPTH);
 	return Number.isFinite(n) && n > 0 ? n : 0;
 };
-const readonlyCeiling = () => process.env.PI_SUBAGENT_READONLY === "1";
+const readonlyCeiling = () => process.env.CODER_SUBAGENT_READONLY === "1";
 const sessionsDir = () => path.join(getAgentDir(), "sessions", "subagents");
 
 // ---------------------------------------------------------------- metadata phiên con
@@ -123,7 +124,7 @@ function callerRoot(config: Config, ctx: ExtensionContext): { rootId?: string; s
 	try {
 		if (ctx.sessionManager.isPersisted()) sessionId = ctx.sessionManager.getSessionId();
 	} catch {}
-	const inherited = validKey(process.env.PI_SUBAGENT_ROOT);
+	const inherited = validKey(process.env.CODER_SUBAGENT_ROOT);
 	if (inherited) return { rootId: inherited, sessionId };
 	if (config.rootKey) return { rootId: `ns:${config.rootKey}`, sessionId };
 	return { rootId: sessionId ? `sess:${sessionId}` : undefined, sessionId };
@@ -178,7 +179,7 @@ function effectiveTools(agent: AgentConfig): string[] | undefined {
 	return kept.length > 0 ? kept : READONLY_TOOLS;
 }
 
-/** Dòng lệnh + biến môi trường bổ sung cho tiến trình pi con (dùng chung attached/detached). */
+/** Dòng lệnh + biến môi trường bổ sung cho tiến trình agent con (dùng chung attached/detached). */
 function buildInvocation(opts: RunOptions): { command: string; args: string[]; extraEnv: Record<string, string> } {
 	const tools = effectiveTools(opts.agent);
 	const args = ["--mode", "json", "-p", "--session-dir", sessionsDir(), "--session-id", opts.sessionID];
@@ -187,17 +188,18 @@ function buildInvocation(opts: RunOptions): { command: string; args: string[]; e
 	if (thinking) args.push("--thinking", thinking);
 	if (tools && tools.length > 0) args.push("--tools", tools.join(","));
 	if (opts.agent.systemPrompt.trim()) args.push("--append-system-prompt", opts.agent.systemPrompt);
-	// LUÔN có tiền tố: prompt bắt đầu bằng "/" bị Pi hiểu là lệnh extension (vd. /revert latest), vượt ranh giới
+	// LUÔN có tiền tố: prompt bắt đầu bằng "/" bị lõi agent hiểu là lệnh extension (vd. /revert latest), vượt ranh giới
 	// chỉ-đọc của agent con (--tools chỉ chặn tool, không chặn lệnh); "-"/"@" bị hiểu là cờ/tệp.
 	args.push(`Task: ${opts.prompt}`);
 	const extraEnv: Record<string, string> = {
-		PI_SUBAGENT_DEPTH: String(currentDepth() + 1),
+		CODER_SUBAGENT_DEPTH: String(currentDepth() + 1),
 		// Con nạp lại đúng cấu hình/bot-permissions của cha và bị nhốt trong cùng jail.
-		PI_CODING_AGENT_DIR: getAgentDir(),
+		CODER_AGENT_DIR: getAgentDir(),
+		PI_CODING_AGENT_DIR: getAgentDir(), // nội bộ: thư viện lõi đọc tên này
 		CODER_WORKDIR: opts.jailRoot,
 	};
-	if (opts.rootId) extraEnv.PI_SUBAGENT_ROOT = opts.rootId;
-	if (readonlyCeiling() || isReadonlyTools(tools)) extraEnv.PI_SUBAGENT_READONLY = "1";
+	if (opts.rootId) extraEnv.CODER_SUBAGENT_ROOT = opts.rootId;
+	if (readonlyCeiling() || isReadonlyTools(tools)) extraEnv.CODER_SUBAGENT_READONLY = "1";
 	return { ...getPiInvocation(args), extraEnv };
 }
 
@@ -293,7 +295,7 @@ function runChild(opts: RunOptions): Promise<RunOutcome> {
 				return resolve({
 					status: "failed",
 					text: lastText,
-					error: errorMessage || (sig ? `pi con bị giết bởi tín hiệu ${sig}` : stderr.trim() || `pi con thoát với mã ${code}`),
+					error: errorMessage || (sig ? `agent con bị giết bởi tín hiệu ${sig}` : stderr.trim() || `agent con thoát với mã ${code}`),
 				});
 			}
 			resolve({ status: "completed", text: lastText || "(không có đầu ra)" });

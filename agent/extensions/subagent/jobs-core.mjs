@@ -1,6 +1,6 @@
 /**
  * Logic job subagent dùng chung cho extension (index.ts) và CLI (lib/subagent-cli.mjs).
- * Node thuần, không phụ thuộc Pi. Trạng thái nằm ở file meta:
+ * Node thuần, không phụ thuộc lõi agent. Trạng thái nằm ở file meta:
  *   <agentDir>/sessions/subagents/<id>.meta.json  (+ <id>.spec.json cho job tách rời)
  *
  * Job "tách rời" (detached) chạy qua một tiến trình điều phối (supervisor, chính file này
@@ -115,7 +115,7 @@ export function isSupervisorOf(pid, start, id) {
 	return i >= 0 && argv[i + 1] === "supervise" && argv[i + 3] === id;
 }
 
-/** pid có đúng là tiến trình pi con của job (--session-id <id>) không. */
+/** pid có đúng là tiến trình agent con của job (--session-id <id>) không. */
 export function isChildOf(pid, start, id) {
 	if (!isSignalablePid(pid) || !isAlive(pid, start)) return false;
 	const argv = procArgv(pid);
@@ -193,7 +193,7 @@ export function listJobs(agentDir) {
 export const countRunning = (agentDir) => listJobs(agentDir).filter((m) => m.status === "running").length;
 
 /** Xóa job đã kết thúc quá hạn (meta, spec và file phiên). Trả về số job đã xóa. */
-/** Tên file thuộc job (khớp CHÍNH XÁC): meta, spec, và file phiên pi `<timestamp>_<id>.jsonl` / `<id>.jsonl`. */
+/** Tên file thuộc job (khớp CHÍNH XÁC): meta, spec, và file phiên `<timestamp>_<id>.jsonl` / `<id>.jsonl`. */
 export function jobFileMatcher(id) {
 	const esc = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 	const sess = new RegExp(`^(?:\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}-\\d{3}Z_)?${esc}\\.jsonl$`);
@@ -374,7 +374,7 @@ function superviseMain(agentDir, id) {
 		else if (cause === "cancelled") r = { status: "cancelled", result: lastText, error: "Đã hủy" };
 		else if (spawnError) r = { status: "failed", result: lastText, error: spawnError };
 		else if (code !== 0 || stopReason === "error" || stopReason === "aborted")
-			r = { status: "failed", result: lastText, error: errorMessage || (signal ? `pi con bị giết bởi tín hiệu ${signal}` : stderr.trim() || `pi con thoát với mã ${code}`) };
+			r = { status: "failed", result: lastText, error: errorMessage || (signal ? `agent con bị giết bởi tín hiệu ${signal}` : stderr.trim() || `agent con thoát với mã ${code}`) };
 		else r = { status: "completed", result: lastText || "(không có đầu ra)" };
 		finishMeta({ ...r, childPid: undefined, childStart: undefined });
 		process.exit(0);

@@ -51,7 +51,7 @@ function victim({ detached = true, extraArgs = [] } = {}) {
 const meta = (o) => ({ sessionID: o.sessionID, agent: "explore", description: "d", cwd: root, status: "running", startedAt: Date.now() - 60_000, ...o });
 const put = (agent, m) => fs.writeFileSync(path.join(core.dirOf(agent), `${m.sessionID}.meta.json`), JSON.stringify(m));
 const cli = (agent, args, env = {}) => {
-	const r = spawnSync(process.execPath, [CLI, ...args, "--json"], { encoding: "utf8", env: { ...process.env, PI_CODING_AGENT_DIR: agent, CODER_JOB_NAMESPACE: "", ...env } });
+	const r = spawnSync(process.execPath, [CLI, ...args, "--json"], { encoding: "utf8", env: { ...process.env, CODER_AGENT_DIR: agent, CODER_JOB_NAMESPACE: "", ...env } });
 	return { code: r.status, out: r.stdout, err: r.stderr };
 };
 

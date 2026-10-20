@@ -6,7 +6,7 @@ Bạn là một bot. Tài liệu này nói cho bạn biết `coder` là gì, g�
 
 ## 1. `coder` là gì, khi nào dùng
 
-`coder` là một agent chuyên viết code (chạy trên Pi), có đủ công cụ: đọc, tìm, sửa, ghi file, `apply_patch`, chạy lệnh bị giới hạn, `todo`, agent con, tra web. Bạn giao một việc coding bằng một câu lệnh; nó tự làm và trả lại **một đối tượng JSON** mô tả kết quả.
+`coder` là một agent chuyên viết code (chạy trên một lõi agent mã nguồn mở, xem phần ghi nguồn cuối tài liệu), có đủ công cụ: đọc, tìm, sửa, ghi file, `apply_patch`, chạy lệnh bị giới hạn, `todo`, agent con, tra web. Bạn giao một việc coding bằng một câu lệnh; nó tự làm và trả lại **một đối tượng JSON** mô tả kết quả.
 
 - **Dùng khi**: sửa lỗi, thêm tính năng, refactor nhỏ đến vừa, viết test, rà soát code, lập kế hoạch thay đổi, tìm hiểu một codebase.
 - **Không dùng khi**: việc không phải code; việc cần quyền mạng/triển khai (đẩy lên remote, deploy); việc cần giao diện đồ họa; việc mà bạn tự làm bằng một lệnh đơn giản.
@@ -18,7 +18,7 @@ Bạn là một bot. Tài liệu này nói cho bạn biết `coder` là gì, g�
 <CODER_HOME>/coder run --dir /duong/dan/repo --session <id-viec> --timeout 900 "Mô tả việc cần làm"
 ```
 
-Luôn dùng `coder run` (đừng gọi `pi` hay `coder -p` trực tiếp): nó tự đặt timeout, dọn tiến trình, che secret, chuẩn hóa kết quả và mã thoát.
+Luôn dùng `coder run` (đừng gọi thẳng lõi agent hay `coder -p` trực tiếp): nó tự đặt timeout, dọn tiến trình, che secret, chuẩn hóa kết quả và mã thoát.
 
 | Cờ | Ý nghĩa |
 |---|---|
@@ -167,7 +167,7 @@ Việc lớn: dùng `--plan` trước để lấy kế hoạch, kiểm tra, rồ
 
 **Không bao giờ**: ghi/đọc ngoài `--dir`, đọc credential, `sudo`, xóa đệ quy rộng, `git push`, tải-rồi-chạy (`curl | sh`), sửa chính sách/extension của chính nó.
 
-**Lệnh test/build chỉ tự chạy trong sandbox:** các lệnh chạy mã của repo (`npm test`, `npm run build/lint`, `node --test`, `pytest`, `go test`, `cargo test`, `bun test`, `bunx -p typescript@5.9.3 tsc --noEmit`...) nằm trong `bash.sandbox` của `permissions.json`. Chạy qua `coder-sandbox` / `--sandbox` thì chúng tự chạy, nhưng trong một sandbox LỒNG (`lib/sandbox-exec.sh`): không mạng, env chỉ gồm biến vô hại (không key model), không thấy `agent/` (auth.json, models-store.json...), `bots/`, và mọi file secret trong thư mục làm việc (`.env*`, `.npmrc`, `*.pem`/`*.key`... tới độ sâu 6, trừ `.env.example`/`.sample`/`.template`/`.dist`); `.git` (kể cả gitdir/commondir của worktree) chỉ-đọc; `.git` là symlink thì lớp lồng từ chối chạy (exit 4), gitdir/commondir của worktree không thấy được thì báo lỗi rõ (exit 4) thay vì thoát im lặng; chỉ ghi được phần còn lại của thư mục làm việc. Pi vẫn giữ mạng và key; chạy `coder` trực tiếp (ngoài sandbox) thì chúng thành yêu cầu duyệt (`needs_permission`, rule `bash.sandbox`). `bunx` chỉ được chạy TypeScript ghim đúng 5.9.3: `bunx -p typescript@5.9.3 tsc ...` hoặc `bunx tsc ...` (dùng `node_modules/typescript` của repo nếu có, không thì bản 5.9.3 do `install.sh` cài vào `vendor/`, chạy offline). Dải như `typescript@5`, gói khác và `bun x` bị chặn cứng.
+**Lệnh test/build chỉ tự chạy trong sandbox:** các lệnh chạy mã của repo (`npm test`, `npm run build/lint`, `node --test`, `pytest`, `go test`, `cargo test`, `bun test`, `bunx -p typescript@5.9.3 tsc --noEmit`...) nằm trong `bash.sandbox` của `permissions.json`. Chạy qua `coder-sandbox` / `--sandbox` thì chúng tự chạy, nhưng trong một sandbox LỒNG (`lib/sandbox-exec.sh`): không mạng, env chỉ gồm biến vô hại (không key model), không thấy `agent/` (auth.json, models-store.json...), `bots/`, và mọi file secret trong thư mục làm việc (`.env*`, `.npmrc`, `*.pem`/`*.key`... tới độ sâu 6, trừ `.env.example`/`.sample`/`.template`/`.dist`); `.git` (kể cả gitdir/commondir của worktree) chỉ-đọc; `.git` là symlink thì lớp lồng từ chối chạy (exit 4), gitdir/commondir của worktree không thấy được thì báo lỗi rõ (exit 4) thay vì thoát im lặng; chỉ ghi được phần còn lại của thư mục làm việc. Lõi agent (tiến trình cha) vẫn giữ mạng và key; chạy `coder` trực tiếp (ngoài sandbox) thì chúng thành yêu cầu duyệt (`needs_permission`, rule `bash.sandbox`). `bunx` chỉ được chạy TypeScript ghim đúng 5.9.3: `bunx -p typescript@5.9.3 tsc ...` hoặc `bunx tsc ...` (dùng `node_modules/typescript` của repo nếu có, không thì bản 5.9.3 do `install.sh` cài vào `vendor/`, chạy offline). Dải như `typescript@5`, gói khác và `bun x` bị chặn cứng.
 
 Lệnh ngoài allowlist bị chặn kèm lý do; `coder` sẽ báo trong kết quả. Nếu bạn cần một lệnh nằm ngoài allowlist, hãy nhờ người vận hành sửa `permissions.json`; đừng cố vòng qua.
 
@@ -206,3 +206,7 @@ Mã thoát của `run`: `0` done · `10` partial · `11` blocked · `20` error �
 6. Không hài lòng với kết quả: `snapshots` → `revert --dry-run` → `revert`.
 
 **Git worktree:** được hỗ trợ tự động. Khi thư mục làm việc là một git worktree (`.git` là file `gitdir: ...`), `coder-sandbox` / `--sandbox` tự gắn CHỈ-ĐỌC gitdir thật và commondir của repo chính (kể cả khi chúng nằm dưới `$HOME`), nên `git log/diff/status`, `bun test`, `tsc` chạy bình thường mà không cần biến nào. Vì chỉ-đọc, `git add/commit` trong sandbox với worktree sẽ fail, và đó là CHỦ Ý: người giao việc tự commit ngoài sandbox. Không cấp `CODER_EXTRA_RW` cho gitdir/commondir: commondir dùng chung với repo chính, ghi được thì hook/config sẽ chạy ở mọi worktree khác, kể cả `main`. `CODER_EXTRA_RO` chỉ dùng để gắn thêm repo tham chiếu chỉ-đọc (ví dụ đọc mã Rakazo), không còn cần để lách lỗi worktree.
+
+**Biến môi trường thư mục agent:** dùng `CODER_AGENT_DIR` (mặc định `${CODER_HOME}/agent`, tức `<thư mục coder>/agent`). Tên cũ `PI_CODING_AGENT_DIR` vẫn được nhận nhưng in cảnh báo lỗi thời; hãy đổi sang `CODER_AGENT_DIR`. Tương tự `CODER_SUBAGENT_*` và `CODER_SNAPSHOT_DEBUG` thay cho tên `PI_*` cũ.
+
+**Ghi nguồn:** lõi agent của `coder` là pi coding agent (https://github.com/earendil-works/pi, MIT License), xem `NOTICE`.
