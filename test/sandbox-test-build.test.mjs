@@ -224,13 +224,14 @@ test("S10: sandbox lồng: không key trong env, không mạng, không đọc đ
 	const here = path.join(root, "tools/coder");
 	fs.mkdirSync(path.join(root, "tools/pi"), { recursive: true });
 	fs.mkdirSync(path.join(here, "lib"), { recursive: true });
-	for (const f of ["coder-sandbox", "lib/sandbox-exec.sh"]) fs.copyFileSync(path.join(CODER, f), path.join(here, f));
+	for (const f of ["coder-sandbox", "lib/sandbox-exec.sh", "lib/secret-files.mjs"]) fs.copyFileSync(path.join(CODER, f), path.join(here, f));
 	fs.cpSync(path.join(CODER, "lib/nested-bin"), path.join(here, "lib/nested-bin"), { recursive: true });
+	fs.cpSync(path.join(CODER, "agent/extensions/bot-permissions"), path.join(here, "agent/extensions/bot-permissions"), { recursive: true });
 	fs.cpSync(path.join(CODER, "vendor/node_modules/typescript"), path.join(here, "vendor/node_modules/typescript"), { recursive: true });
 	for (const f of ["coder-sandbox", "lib/sandbox-exec.sh", "lib/nested-bin/bunx"]) fs.chmodSync(path.join(here, f), 0o755);
 	const FAKE = "fake-canary-0123456789abcdef";
 	const agent = path.join(here, "agent"); // như cài đặt thật: agent-dir nằm TRONG thư mục coder
-	fs.mkdirSync(agent);
+	fs.mkdirSync(agent, { recursive: true });
 	fs.writeFileSync(path.join(agent, "auth.json"), `{"t":"${FAKE}"}\n`);
 	fs.writeFileSync(path.join(agent, "models-store.json"), `{"k":"${FAKE}"}\n`);
 	fs.writeFileSync(path.join(here, ".env"), `FAKE_ENV_FILE_SECRET=${FAKE}\n`);
@@ -296,4 +297,94 @@ test("mạng: fetch và TCP connect ra ngoài đều lỗi", async () => {
 	for (const want of ["OUTER_KEY=set", "LEAK_TEST=pass", "TSC_PIN=ok", "TSC_BARE=ok", "TSC_BAD=fail", "Version 5.9.3", "SHIM_OTHER=refused", "SHIM_RANGE=refused"])
 		assert.match(out, new RegExp(`^${want}$`, "m"), out);
 	assert.match(out, /\b4 pass\b/, out);
+});
+
+/** Dựng thư mục coder giả (coder-sandbox + wrapper + secret-files + policy.ts) dưới root/tools/coder. */
+function fakeCoder(root) {
+	const here = path.join(root, "tools/coder");
+	fs.mkdirSync(path.join(root, "tools/pi"), { recursive: true });
+	fs.mkdirSync(path.join(here, "lib"), { recursive: true });
+	for (const f of ["coder-sandbox", "lib/sandbox-exec.sh", "lib/secret-files.mjs"]) fs.copyFileSync(path.join(CODER, f), path.join(here, f));
+	fs.cpSync(path.join(CODER, "lib/nested-bin"), path.join(here, "lib/nested-bin"), { recursive: true });
+	fs.cpSync(path.join(CODER, "agent/extensions/bot-permissions"), path.join(here, "agent/extensions/bot-permissions"), { recursive: true });
+	for (const f of ["coder-sandbox", "lib/sandbox-exec.sh", "lib/nested-bin/bunx"]) fs.chmodSync(path.join(here, f), 0o755);
+	return here;
+}
+const runSbx = (here, work, script, extra = {}) => {
+	const env = { PATH: process.env.PATH, HOME: process.env.HOME, PI_CODING_AGENT_DIR: path.join(here, "agent"), CODER_WORKDIR: work, ...extra };
+	const r = spawnSync(path.join(here, "coder-sandbox"), ["exec", "--", "sh", "-c", script], { env, encoding: "utf8", timeout: 60000 });
+	return { status: r.status, out: r.stdout + r.stderr };
+};
+
+test("S11: sandbox lồng: .git chỉ-đọc (repo thường + git worktree), file secret ở thư mục con bị che, .env.example đọc được", { skip: !HAS_BWRAP && "không có bwrap" }, () => {
+	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "sbx-git-")));
+	cleanups.push(root);
+	const here = fakeCoder(root);
+	const W = path.join(here, "lib/sandbox-exec.sh");
+	const SECRET = "nested-secret-canary";
+	const git = (cwd, ...a) => execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...a], { cwd, stdio: "pipe" });
+
+	// (a) repo thường + secret ở thư mục con
+	const work = path.join(root, "work");
+	fs.mkdirSync(path.join(work, "sub"), { recursive: true });
+	fs.mkdirSync(path.join(work, "a/b"), { recursive: true });
+	fs.writeFileSync(path.join(work, "sub/.env"), `S=${SECRET}\n`);
+	fs.writeFileSync(path.join(work, "a/b/.env.local"), `S=${SECRET}\n`);
+	fs.writeFileSync(path.join(work, "a/b/server.pem"), `${SECRET}\n`);
+	fs.writeFileSync(path.join(work, "sub/.env.example"), "S=placeholder\n");
+	fs.writeFileSync(path.join(work, "x.txt"), "x\n");
+	git(work, "init", "-q");
+	git(work, "add", "x.txt");
+	git(work, "commit", "-qm", "i");
+	const s1 = [
+		`${W} -- 'echo evil > .git/hooks/pre-commit' 2>/dev/null && echo HOOK=ok || echo HOOK=fail`,
+		`${W} -- 'echo "[core]" >> .git/config' 2>/dev/null && echo CONFIG=ok || echo CONFIG=fail`,
+		`${W} -- 'git log --oneline -1 >/dev/null' && echo GITREAD=ok || echo GITREAD=fail`,
+		`${W} -- 'echo y > new.txt' && echo WORKWRITE=ok || echo WORKWRITE=fail`,
+		`${W} -- 'cat sub/.env a/b/.env.local a/b/server.pem' 2>/dev/null | grep -c ${SECRET} | sed 's/^/LEAKS=/'`,
+		`${W} -- 'cat sub/.env.example'`,
+	].join("; ");
+	const r1 = runSbx(here, work, s1);
+	assert.equal(r1.status, 0, r1.out);
+	for (const want of ["HOOK=fail", "CONFIG=fail", "GITREAD=ok", "WORKWRITE=ok", "LEAKS=0", "S=placeholder"]) assert.match(r1.out, new RegExp(`^${want}$`, "m"), r1.out);
+	assert.ok(!fs.existsSync(path.join(work, ".git/hooks/pre-commit")));
+	assert.ok(!fs.readFileSync(path.join(work, ".git/config"), "utf8").includes("[core]\n[core]"));
+	assert.ok(fs.existsSync(path.join(work, "new.txt")));
+
+	// (b) git worktree: .git là file; gitdir thật + commondir nằm NGOÀI workdir (được gắn rw ở lớp ngoài qua CODER_EXTRA_RW)
+	const main = path.join(root, "main");
+	fs.mkdirSync(main);
+	fs.writeFileSync(path.join(main, "m.txt"), "m\n");
+	git(main, "init", "-q");
+	git(main, "add", "m.txt");
+	git(main, "commit", "-qm", "i");
+	const wt = path.join(root, "wt");
+	git(main, "worktree", "add", "-q", wt);
+	const gitdir = path.join(main, ".git/worktrees/wt");
+	const s2 = [
+		`${W} -- 'echo evil > ${main}/.git/hooks/pre-commit' 2>/dev/null && echo CHOOK=ok || echo CHOOK=fail`,
+		`${W} -- 'echo "[x]" >> ${main}/.git/config' 2>/dev/null && echo CCONFIG=ok || echo CCONFIG=fail`,
+		`${W} -- 'echo x > ${gitdir}/HEAD' 2>/dev/null && echo WTHEAD=ok || echo WTHEAD=fail`,
+		`${W} -- 'echo "gitdir: /tmp/evil" > .git' 2>/dev/null && echo GITFILE=ok || echo GITFILE=fail`,
+		`${W} -- 'git log --oneline -1 >/dev/null' && echo WTREAD=ok || echo WTREAD=fail`,
+		// lớp ngoài (không lồng) VẪN ghi được: chứng minh chặn là do lớp lồng
+		`touch ${main}/.git/outer-probe && echo OUTERW=ok || echo OUTERW=fail`,
+	].join("; ");
+	const r2 = runSbx(here, wt, s2, { CODER_EXTRA_RW: main });
+	assert.equal(r2.status, 0, r2.out);
+	for (const want of ["CHOOK=fail", "CCONFIG=fail", "WTHEAD=fail", "GITFILE=fail", "WTREAD=ok", "OUTERW=ok"]) assert.match(r2.out, new RegExp(`^${want}$`, "m"), r2.out);
+	assert.ok(!fs.existsSync(path.join(main, ".git/hooks/pre-commit")));
+	assert.match(fs.readFileSync(path.join(wt, ".git"), "utf8"), /^gitdir: /);
+});
+
+test("S12: secret-files.mjs dùng đúng isSecretName, giới hạn độ sâu, bỏ node_modules/.git/vendor", () => {
+	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "sbx-sf-")));
+	cleanups.push(root);
+	const mk = (rel, c = "x") => { fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true }); fs.writeFileSync(path.join(root, rel), c); };
+	for (const f of [".env", "sub/.env", "a/b/.env.local", "a/b/c/d/e/.npmrc", "k/id_rsa", "k/x.key", "sub/.env.example", "sub/.env.prod.sample", "node_modules/p/.env", ".git/x/.env", "vendor/.env", "1/2/3/4/5/6/7/.env", "ok.txt"]) mk(f);
+	fs.mkdirSync(path.join(root, "home/.ssh"), { recursive: true });
+	const r = spawnSync(process.execPath, ["--experimental-strip-types", "--no-warnings", path.join(CODER, "lib/secret-files.mjs"), root], { encoding: "utf8" });
+	assert.equal(r.status, 0, r.stderr);
+	const got = r.stdout.split("\0").filter(Boolean).map((x) => x.slice(0, 2) + path.relative(root, x.slice(2))).sort();
+	assert.deepEqual(got, ["d home/.ssh", "f .env", "f a/b/.env.local", "f a/b/c/d/e/.npmrc", "f k/id_rsa", "f k/x.key", "f sub/.env"].sort());
 });
