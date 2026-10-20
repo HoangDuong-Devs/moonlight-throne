@@ -9,7 +9,7 @@
  *   { enabled, maxAgeDays (14), maxTotalMB (1000) }. Kho của cwd hiện tại không bao giờ bị xóa.
  * - Giữ `keep` snapshot gần nhất (mặc định 50), giới hạn dung lượng maxRepoMB. Cấu hình: <agent-dir>/snapshot.json.
  * - Không đăng ký tool cho model. Cho người dùng TUI: /snapshots, /revert <id> [--dry-run]. Bot dùng lib/snapshot-cli.mjs.
- * - Logic dùng chung nằm ở tools/coder/lib/snapshot-cli.mjs (một nguồn duy nhất).
+ * - Logic dùng chung nằm ở tools/moonlight-throne/lib/snapshot-cli.mjs (một nguồn duy nhất).
  * Lỗi chụp không bao giờ làm hỏng lượt chạy (chỉ ghi stderr khi CODER_SNAPSHOT_DEBUG=1).
  */
 import path from "node:path";

@@ -2,7 +2,7 @@
 
 Bạn là một bot. Tài liệu này nói cho bạn biết `coder` là gì, gọi nó thế nào, đọc kết quả ra sao và xử lý từng tình huống. Hãy đọc hết một lần, sau đó dùng mục 11 làm bản tra nhanh.
 
-`<CODER_HOME>` bên dưới là thư mục cài đặt `tools/coder` trên máy của bạn (người vận hành sẽ cho bạn đường dẫn đúng).
+`<CODER_HOME>` bên dưới là thư mục cài đặt `tools/moonlight-throne` trên máy của bạn (người vận hành sẽ cho bạn đường dẫn đúng).
 
 ## 1. `coder` là gì, khi nào dùng
 
