@@ -8,6 +8,8 @@
 # Trong sandbox: hệ thống read-only; $HOME là tmpfs trống; không có docker.sock/ssh-agent/dbus; PID/IPC/UTS namespace riêng;
 # chỉ thư mục làm việc (CODER_WORKDIR) và dữ liệu chạy của coder được ghi. File .env bị che; key đưa vào bằng biến môi trường.
 # Biến môi trường của shell gọi KHÔNG được kế thừa (--clearenv); chỉ truyền: key model, PATH tối thiểu, CODER_*, và CODER_PASS_ENV.
+# Giá trị env (kể cả key) KHÔNG nằm trên argv: cả khối --setenv đi qua `--args 3` (NUL-separated, pipe) nên không lộ trong
+# /proc/<pid>/cmdline hay `ps`. Cùng user Unix vẫn đọc được /proc/<pid>/environ — đây là chống lộ vào log/tool output, không phải cách ly.
 # Git worktree (.git là file): gitdir + commondir thật tự được gắn chỉ-đọc.
 # Tùy chọn: CODER_EXTRA_RW / CODER_EXTRA_RO (danh sách đường dẫn ngăn bằng ':'), CODER_PASS_ENV (tên biến ngăn bằng ','),
 #           CODER_SANDBOX_NET=off (không mạng; chỉ dùng được với model cục bộ).
@@ -107,15 +109,20 @@ IFS=: read -r -a _ro <<< "${CODER_EXTRA_RO:-}"; for p in "${_ro[@]:-}"; do [ -n 
 A+=(--unshare-pid --unshare-ipc --unshare-uts --die-with-parent --new-session --chdir "$WORKDIR")
 [ "${CODER_SANDBOX_NET:-on}" = "off" ] && A+=(--unshare-net)
 
-A+=(--clearenv --setenv HOME "$HOME" --setenv PATH "$(dirname "$NODE_BIN")${BUN_DIR:+:$BUN_DIR}:/usr/local/bin:/usr/bin:/bin" \
+# Env trong sandbox: KHÔNG được đặt giá trị lên argv — argv (kể cả của key) đọc được qua /proc/<pid>/cmdline và `ps`.
+# Cả khối env (--clearenv + mọi --setenv, gồm key model và CODER_PASS_ENV) đi qua `--args FD`: bwrap đọc các tham số
+# NUL-separated từ fd 3 NGAY TẠI vị trí `--args`, nên thứ tự --clearenv trước --setenv vẫn giữ nguyên. Không dùng file tạm.
+E=(--clearenv --setenv HOME "$HOME" --setenv PATH "$(dirname "$NODE_BIN")${BUN_DIR:+:$BUN_DIR}:/usr/local/bin:/usr/bin:/bin" \
     --setenv LANG "${LANG:-C.UTF-8}" --setenv TERM "${TERM:-dumb}" \
     --setenv CODER_AGENT_DIR "$AGENT" --setenv PI_CODING_AGENT_DIR "$AGENT" --setenv CODER_WORKDIR "$WORKDIR" \
     --setenv CODER_SANDBOXED 1 --setenv CODER_HOME "$HERE")   # bot-permissions: lệnh test/build (bash.sandbox) chỉ tự chạy khi có biến này VÀ PID 1 là bwrap
 for v in COMMANDCODE_API_KEY XAI_API_KEY EXA_API_KEY GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL \
          CODER_JOB_NAMESPACE CODER_ASK_TIMEOUT_MS CODER_PLAN CODER_ALLOW_STDIN; do
-  [ -n "${!v:-}" ] && A+=(--setenv "$v" "${!v}")
+  [ -n "${!v:-}" ] && E+=(--setenv "$v" "${!v}")
 done
-IFS=, read -r -a _pe <<< "${CODER_PASS_ENV:-}"; for v in "${_pe[@]:-}"; do [ -n "$v" ] && [ -n "${!v:-}" ] && A+=(--setenv "$v" "${!v}"); done
+IFS=, read -r -a _pe <<< "${CODER_PASS_ENV:-}"; for v in "${_pe[@]:-}"; do [ -n "$v" ] && [ -n "${!v:-}" ] && E+=(--setenv "$v" "${!v}"); done
+exec 3< <(printf '%s\0' "${E[@]}")
+A+=(--args 3)
 
 if [ "$EXEC_MODE" = 1 ]; then exec bwrap "${A[@]}" "$@"; fi
 exec bwrap "${A[@]}" "$HERE/coder" "$@"
