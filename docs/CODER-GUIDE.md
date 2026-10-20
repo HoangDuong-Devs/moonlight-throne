@@ -167,6 +167,8 @@ Việc lớn: dùng `--plan` trước để lấy kế hoạch, kiểm tra, rồ
 
 **Không bao giờ**: ghi/đọc ngoài `--dir`, đọc credential, `sudo`, xóa đệ quy rộng, `git push`, tải-rồi-chạy (`curl | sh`), sửa chính sách/extension của chính nó.
 
+**Lệnh test/build chỉ tự chạy trong sandbox:** các lệnh chạy mã của repo (`npm test`, `npm run build/lint`, `node --test`, `pytest`, `go test`, `cargo test`, `bun test`, `bunx -p typescript@5 tsc --noEmit`...) nằm trong `bash.sandbox` của `permissions.json`. Chạy qua `coder-sandbox` / `--sandbox` thì chúng chạy thẳng; chạy `coder` trực tiếp (ngoài sandbox) thì chúng thành yêu cầu duyệt (`needs_permission`, rule `bash.sandbox`). `bunx` chỉ được chạy TypeScript: `bunx -p typescript@5 tsc ...`, hoặc `bunx tsc ...` khi repo có sẵn `node_modules/typescript`; gói khác bị chặn cứng. Với `CODER_SANDBOX_NET=off`, `bunx -p typescript@5` không tải được gói, nên chỉ dùng được tsc cục bộ.
+
 Lệnh ngoài allowlist bị chặn kèm lý do; `coder` sẽ báo trong kết quả. Nếu bạn cần một lệnh nằm ngoài allowlist, hãy nhờ người vận hành sửa `permissions.json`; đừng cố vòng qua.
 
 ## 11. Bản tra nhanh

@@ -113,4 +113,6 @@ Lưu ý: duyệt `once` bị tiêu thụ khi lệnh chạy (ghi vào `grants-use
 
 ## 5. Giới hạn
 
+`bash.sandbox` (mảng mẫu lệnh, chỉ cho bash): lệnh đã khớp `allow` mà khớp `bash.sandbox` chỉ tự chạy khi extension phát hiện đang ở trong `coder-sandbox` (`CODER_SANDBOXED=1` do coder-sandbox đặt VÀ `/proc/1/comm` = `bwrap`); ngoài sandbox => ask với `rule: "bash.sandbox"`. Luật cứng bunx: chỉ `bunx -p|--package typescript@5[.x[.y]] tsc ...` hoặc `bunx tsc ...` khi có `node_modules/typescript` cục bộ (realpath trong thư mục làm việc); biến `BUN_*` bị cấm gán trước lệnh.
+
 Đây là kiểm soát ở tầng tool, không phải sandbox: một chương trình đã được allow (ví dụ `node --test`, `python3 -m pytest`) vẫn chạy mã tùy ý (kể cả ghi `.git/config`, hook, `package.json`...). Muốn an toàn thật hãy chạy coder qua `coder-sandbox` (user/container riêng) với `grants/` gắn CHỈ-ĐỌC và CLI duyệt chạy ngoài sandbox. Còn lại: (1) chỉ kiểm tra được `.git/config` của repo ở thời điểm gọi (TOCTOU nhỏ), cấu hình git toàn cục/hệ thống tin tưởng như cũ; (2) `git commit`/`rebase` đã duyệt vẫn chạy hook trong `.git/hooks` (nếu mã trong sandbox đã cài hook); (3) `plan-mode` chỉ chặn đường dẫn secret cơ bản — kiểm tra jail/đọc đầy đủ do `bot-permissions` thực hiện khi cùng được nạp.

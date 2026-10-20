@@ -18,6 +18,7 @@ import path from "node:path";
 import { getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
 	audit,
+	detectSandbox,
 	isInside,
 	isSecretName,
 	loadPolicy,
@@ -47,6 +48,7 @@ interface Env {
 	agentDir: string;
 	root: string; // realpath của gốc jail
 	cwd: string;
+	sandboxed: boolean; // detectSandbox(): đang chạy trong coder-sandbox (bwrap)
 }
 
 // ---------- kiểm tra đường dẫn ----------
@@ -104,7 +106,7 @@ const WRAPPERS = new Set(["env", "command", "nohup", "time", "nice", "timeout", 
 const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh", "fish"]);
 const DOWNLOADERS = new Set(["curl", "wget", "fetch", "nc", "ncat"]);
 const INTERPRETERS = new Set([...SHELLS, "python", "python3", "node", "perl", "ruby", "php", "source", ".", "eval", "sudo", "doas", "xargs"]);
-const BAD_ASSIGN = /^(LD_[A-Za-z_]*|DYLD_[A-Za-z_]*|BASH[A-Za-z_]*|GIT_[A-Za-z_]*|(?:npm|NPM|YARN|PNPM|yarn|pnpm)_[A-Za-z_]*|NODE_(?:OPTIONS|PATH)|PYTHON(?:STARTUP|HOME|PATH)|PATH|ENV|PAGER|MANPAGER|LESS[A-Z]*|EDITOR|VISUAL|IFS|SHELL|HOME|TMPDIR|XDG_[A-Z_]*|RIPGREP_CONFIG_PATH|JQ_[A-Z_]*|GREP_[A-Z_]*|PERL5[A-Z]*|RUBY[A-Z]*|SSH_[A-Z_]*)$/;
+const BAD_ASSIGN = /^(LD_[A-Za-z_]*|DYLD_[A-Za-z_]*|BASH[A-Za-z_]*|GIT_[A-Za-z_]*|BUN_[A-Za-z_]*|(?:npm|NPM|YARN|PNPM|yarn|pnpm)_[A-Za-z_]*|NODE_(?:OPTIONS|PATH)|PYTHON(?:STARTUP|HOME|PATH)|PATH|ENV|PAGER|MANPAGER|LESS[A-Z]*|EDITOR|VISUAL|IFS|SHELL|HOME|TMPDIR|XDG_[A-Z_]*|RIPGREP_CONFIG_PATH|JQ_[A-Z_]*|GREP_[A-Z_]*|PERL5[A-Z]*|RUBY[A-Z]*|SSH_[A-Z_]*)$/;
 const PROTECTED_MENTION = /(^|[/\s'"=(,:@])(\.env(\.[A-Za-z0-9_.-]+)?|auth\.json|models(-store)?\.json|id_rsa|id_ed25519|\.netrc|\.npmrc)($|[/\s'"),:;])/;
 
 const WRITEISH = /^(rm|rmdir|mv|cp|touch|mkdir|chmod|chown|ln|tee|truncate|install|rsync|sed|tar|unzip|patch|git|npm|npx|pnpm|yarn|pip|pip3|python|python3|node)$/;
@@ -263,6 +265,12 @@ function checkSegment(seg: Segment, env: Env, state: { cwd: string }, depth: num
 		return OK;
 	}
 
+	// bunx / bun x: chỉ chạy typescript (tsc), không cho tải/chạy gói tùy ý từ registry
+	if (cmd === "bunx" || (cmd === "bun" && args[0] === "x")) {
+		const d = checkBunx(cmd === "bunx" ? args : args.slice(1), state.cwd, env);
+		if (!d.ok) return d;
+	}
+
 	// rm -r trên đường dẫn rộng
 	if (cmd === "rm" || cmd === "rmdir" || cmd === "shred" || cmd === "unlink") {
 		const recursive = args.some((a) => /^--recursive$|^-[a-zA-Z]*[rR]/.test(a));
@@ -329,6 +337,32 @@ function checkSegment(seg: Segment, env: Env, state: { cwd: string }, depth: num
 	}
 
 	return checkRedirects();
+}
+
+/** Gói typescript được phép cho `bunx -p`: ghim major 5 (typescript@5, @5.x, @5.x.y). */
+const BUNX_TS_PKG = /^typescript@5(\.\d+){0,2}$/;
+
+/**
+ * Luật cứng cho bunx (không tắt được bằng permissions.json): chỉ 2 dạng
+ *   bunx -p|--package typescript@5[.x[.y]] tsc ...
+ *   bunx tsc ...   (chỉ khi <cwd>/node_modules/typescript có sẵn VÀ nằm trong thư mục làm việc; nếu không bunx sẽ tải gói
+ *                   tên "tsc" trên npm — KHÔNG phải TypeScript)
+ * Mọi gói/cờ khác (--bun, -p gói khác, nhiều -p...) bị chặn.
+ */
+function checkBunx(args: string[], cwd: string, env: Env): Decision {
+	const bad = (why: string) => no("bunx-package", `bunx chỉ được chạy TypeScript (tsc): ${why}. Dùng 'bunx -p typescript@5 tsc --noEmit'.`);
+	let rest = args;
+	if (rest[0] === "-p" || rest[0] === "--package") {
+		if (!BUNX_TS_PKG.test(rest[1] ?? "")) return bad(`gói '${(rest[1] ?? "").slice(0, 60)}' không được phép`);
+		rest = rest.slice(2);
+		if (rest[0] !== "tsc") return bad("sau -p typescript@5 phải là 'tsc'");
+		return OK;
+	}
+	if (rest[0] !== "tsc") return bad(`'${(rest[0] ?? "").slice(0, 60)}' không được phép`);
+	const pkg = path.join(cwd, "node_modules", "typescript", "package.json");
+	if (!fs.existsSync(pkg) || !isInside(realish(pkg), env.root))
+		return bad("không có node_modules/typescript cục bộ trong thư mục làm việc (bunx sẽ tải gói 'tsc' giả trên npm)");
+	return OK;
 }
 
 function makeCtx(env: Env, state: { cwd: string }): VetCtx {
@@ -455,6 +489,15 @@ function checkBashString(command: string, env: Env, state: { cwd: string }, dept
 			if (askPat) {
 				pendingAsk ??= askD("bash.ask", `Lệnh '${scrub(seg.text).slice(0, 100)}' cần duyệt (khớp bash.ask '${askPat}')`, askPat);
 				continue;
+			}
+			const sbPat = env.sandboxed ? undefined : (env.policy.bash.sandbox ?? []).find((pat) => forms.some((f) => matchCommand(pat, f)));
+			if (sbPat) {
+				// lệnh test/build chạy mã tùy ý của repo: ngoài coder-sandbox thì không tự chạy, phải được duyệt
+				pendingAsk ??= askD(
+					"bash.sandbox",
+					`Lệnh '${scrub(seg.text).slice(0, 100)}' chạy mã của repo (test/build), chỉ tự chạy trong coder-sandbox; đang chạy ngoài sandbox nên cần duyệt (khớp bash.sandbox '${sbPat}')`,
+					sbPat,
+				);
 			}
 			if (env.policy.mode !== "allowlist") continue;
 			if (!env.policy.bash.allow.some((pat) => forms.some((f) => matchCommand(pat, f))))
@@ -661,6 +704,7 @@ export default function botPermissions(pi: ExtensionAPI): void {
 			agentDir: agentReal,
 			root: rootOf(ctx.cwd),
 			cwd: path.resolve(ctx.cwd),
+			sandboxed: detectSandbox(),
 		};
 		let d: Decision;
 		try {

@@ -10,6 +10,11 @@ import { globToRegExp } from "./shell.ts";
 export interface Rules {
 	allow: string[];
 	deny: string[];
+	/**
+	 * Chỉ bash: lệnh (đã khớp allow) chạy mã của repo (test/build) => CHỈ tự chạy trong coder-sandbox.
+	 * Ngoài sandbox => ask (rule "bash.sandbox"). Rỗng/không khai báo = không ràng buộc.
+	 */
+	sandbox?: string[];
 	/** Cần duyệt (ask): thắng allow, thua deny và luật cứng. */
 	ask: string[];
 }
@@ -60,8 +65,10 @@ function rules(v: unknown, name: string, errs: string[], regexOk: boolean): Rule
 		allow: strArray(o.allow, `${name}.allow`, errs),
 		deny: strArray(o.deny, `${name}.deny`, errs),
 		ask: strArray(o.ask, `${name}.ask`, errs),
-	};
-	if (regexOk) for (const p of [...r.allow, ...r.deny, ...r.ask]) {
+	} as Rules;
+	if (name === "bash") r.sandbox = strArray(o.sandbox, `${name}.sandbox`, errs);
+	else if (o.sandbox !== undefined) errs.push(`${name}.sandbox chỉ dùng được cho bash`);
+	if (regexOk) for (const p of [...r.allow, ...r.deny, ...r.ask, ...(r.sandbox ?? [])]) {
 		const e = checkPattern(p);
 		if (e) errs.push(`${name}: mẫu '${p}': ${e}`);
 	}
@@ -134,6 +141,22 @@ export function loadPolicy(agentDir: string): Loaded {
 	}
 	cache.set(file, { mtime: st.mtimeMs, loaded });
 	return loaded;
+}
+
+// ---------- phát hiện sandbox ----------
+
+/**
+ * Đang chạy trong coder-sandbox? Cần CẢ HAI: CODER_SANDBOXED=1 (coder-sandbox đặt bằng --setenv sau --clearenv)
+ * VÀ PID 1 của namespace là bwrap (coder-sandbox luôn --unshare-pid). Model không đặt được env của tiến trình extension;
+ * chỉ đặt biến ở host mà không có namespace bwrap thì vẫn bị coi là NGOÀI sandbox (fail-closed).
+ */
+export function detectSandbox(env: NodeJS.ProcessEnv = process.env, readComm: () => string = () => fs.readFileSync("/proc/1/comm", "utf8")): boolean {
+	if (env.CODER_SANDBOXED !== "1") return false;
+	try {
+		return readComm().trim() === "bwrap";
+	} catch {
+		return false;
+	}
 }
 
 // ---------- khớp mẫu ----------

@@ -439,8 +439,10 @@ test("B: lệnh hợp lệ phổ biến VẪN chạy (không chặn nhầm quá 
 	const h = setup();
 	for (const c of VALID_BOT) {
 		const r = await h.bash(c);
-		// chấp nhận ask (needs_permission) cho lệnh vốn thuộc bash.ask; ở danh sách này không có lệnh ask
-		assert.ok(!isBlocked(r), `KHÔNG được chặn nhầm: ${c} => ${r?.reason}`);
+		// lệnh test/build (bash.sandbox) ngoài coder-sandbox => ask bash.sandbox (không chặn cứng); còn lại phải chạy thẳng
+		if (/^(node --test|npm (test|run (lint|build|test))|python3 -m pytest)/.test(c))
+			assert.ok(isBlocked(r) && /needs_permission/.test(r.reason) && /"rule":"bash\.sandbox"/.test(r.reason), `test/build ngoài sandbox phải ask bash.sandbox: ${c} => ${r?.reason}`);
+		else assert.ok(!isBlocked(r), `KHÔNG được chặn nhầm: ${c} => ${r?.reason}`);
 	}
 });
 
