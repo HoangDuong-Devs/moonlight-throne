@@ -67,6 +67,16 @@ else
   else add FAIL build "npm install lỗi, 20 dòng cuối: $LOGDIR/install.log"; tail -n 20 "$LOGDIR/install.log" >&2; fi
 fi
 
+# 4b. TypeScript ghim 5.9.3 cho `bunx tsc` trong sandbox lồng (không mạng): cài vào vendor/ (gắn chỉ-đọc), --ignore-scripts
+TS_VER="5.9.3"; TS_PKG="$HERE/vendor/node_modules/typescript/package.json"
+TS_HAVE="$( [ -f "$TS_PKG" ] && node -p 'require(process.argv[1]).version' "$TS_PKG" 2>/dev/null || true)"
+if [ "$TS_HAVE" = "$TS_VER" ]; then add OK typescript "vendor typescript@$TS_VER"
+elif [ $CHECK = 1 ] || [ $NOBUILD = 1 ]; then add WARN typescript "chưa có vendor typescript@$TS_VER (bunx tsc trong sandbox sẽ lỗi)"
+elif ! command -v npm >/dev/null; then add FAIL typescript "thiếu npm"
+elif npm install --prefix "$HERE/vendor" --no-audit --no-fund --ignore-scripts --no-save --omit=dev "typescript@$TS_VER" >/dev/null 2>&1 \
+     && [ "$(node -p 'require(process.argv[1]).version' "$TS_PKG" 2>/dev/null)" = "$TS_VER" ]; then add OK typescript "đã cài vendor typescript@$TS_VER"
+else add FAIL typescript "npm install typescript@$TS_VER lỗi"; fi
+
 # 5. .env (không bao giờ ghi đè)
 ENVF="$HERE/.env"
 if [ -e "$ENVF" ]; then

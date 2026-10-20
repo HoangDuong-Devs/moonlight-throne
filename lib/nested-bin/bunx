@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Shim bunx trong sandbox lồng (không mạng): chỉ chạy TypeScript ghim 5.9.3 cài sẵn bởi install.sh (vendor/, chỉ-đọc).
+#   bunx -p|--package typescript@5.9.3 tsc ...  -> vendor tsc
+#   bunx tsc ...                                -> node_modules/typescript cục bộ (nếu có), không thì vendor tsc
+# Gói khác: từ chối (bot-permissions đã chặn cứng; đây là lớp phòng thủ thứ hai).
+set -euo pipefail
+VENDOR_TSC="${CODER_HOME:?}/vendor/node_modules/typescript/bin/tsc"
+if [ "${1:-}" = "-p" ] || [ "${1:-}" = "--package" ]; then
+  [ "${2:-}" = "typescript@5.9.3" ] && [ "${3:-}" = "tsc" ] || { echo "bunx(shim): chỉ cho phép -p typescript@5.9.3 tsc" >&2; exit 126; }
+  shift 3; TSC="$VENDOR_TSC"
+elif [ "${1:-}" = "tsc" ]; then
+  shift; TSC="$VENDOR_TSC"; [ -f "$PWD/node_modules/typescript/bin/tsc" ] && TSC="$PWD/node_modules/typescript/bin/tsc"
+else echo "bunx(shim): chỉ cho phép tsc" >&2; exit 126; fi
+[ -f "$TSC" ] || { echo "bunx(shim): chưa cài TypeScript 5.9.3 (chạy install.sh)" >&2; exit 127; }
+exec node "$TSC" "$@"

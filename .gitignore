@@ -9,3 +9,4 @@ agent/snapshots/
 agent/grants/
 agent/permission-requests/
 bots/
+vendor/

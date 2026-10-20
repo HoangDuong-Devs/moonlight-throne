@@ -266,8 +266,9 @@ function checkSegment(seg: Segment, env: Env, state: { cwd: string }, depth: num
 	}
 
 	// bunx / bun x: chỉ chạy typescript (tsc), không cho tải/chạy gói tùy ý từ registry
-	if (cmd === "bunx" || (cmd === "bun" && args[0] === "x")) {
-		const d = checkBunx(cmd === "bunx" ? args : args.slice(1), state.cwd, env);
+	if (cmd === "bun" && args[0] === "x") return no("bunx-package", "'bun x' bị cấm; dùng 'bunx -p typescript@5.9.3 tsc --noEmit'.");
+	if (cmd === "bunx") {
+		const d = checkBunx(args, state.cwd, env);
 		if (!d.ok) return d;
 	}
 
@@ -339,30 +340,57 @@ function checkSegment(seg: Segment, env: Env, state: { cwd: string }, depth: num
 	return checkRedirects();
 }
 
-/** Gói typescript được phép cho `bunx -p`: ghim major 5 (typescript@5, @5.x, @5.x.y). */
-const BUNX_TS_PKG = /^typescript@5(\.\d+){0,2}$/;
+/** TypeScript ghim CHÍNH XÁC (install.sh cài vào <coder>/vendor; shim bunx trong sandbox lồng dùng bản này, không mạng). */
+export const TS_PINNED = "typescript@5.9.3";
+const vendorTsc = () => (process.env.CODER_HOME ? path.join(process.env.CODER_HOME, "vendor/node_modules/typescript/bin/tsc") : "");
 
 /**
  * Luật cứng cho bunx (không tắt được bằng permissions.json): chỉ 2 dạng
- *   bunx -p|--package typescript@5[.x[.y]] tsc ...
- *   bunx tsc ...   (chỉ khi <cwd>/node_modules/typescript có sẵn VÀ nằm trong thư mục làm việc; nếu không bunx sẽ tải gói
- *                   tên "tsc" trên npm — KHÔNG phải TypeScript)
- * Mọi gói/cờ khác (--bun, -p gói khác, nhiều -p...) bị chặn.
+ *   bunx -p|--package typescript@5.9.3 tsc ...   (đúng phiên bản; dải như typescript@5 bị từ chối)
+ *   bunx tsc ...   khi có <cwd>/node_modules/typescript nằm trong thư mục làm việc, HOẶC đang trong coder-sandbox và có
+ *                  vendor tsc (shim bunx của sandbox lồng trỏ vào đó). Nếu không, bunx sẽ tải gói "tsc" giả trên npm.
+ * `bun x` và mọi gói/cờ khác bị chặn.
  */
 function checkBunx(args: string[], cwd: string, env: Env): Decision {
-	const bad = (why: string) => no("bunx-package", `bunx chỉ được chạy TypeScript (tsc): ${why}. Dùng 'bunx -p typescript@5 tsc --noEmit'.`);
-	let rest = args;
-	if (rest[0] === "-p" || rest[0] === "--package") {
-		if (!BUNX_TS_PKG.test(rest[1] ?? "")) return bad(`gói '${(rest[1] ?? "").slice(0, 60)}' không được phép`);
-		rest = rest.slice(2);
-		if (rest[0] !== "tsc") return bad("sau -p typescript@5 phải là 'tsc'");
+	const bad = (why: string) => no("bunx-package", `bunx chỉ được chạy TypeScript (tsc): ${why}. Dùng 'bunx -p ${TS_PINNED} tsc --noEmit'.`);
+	if (args[0] === "-p" || args[0] === "--package") {
+		if (args[1] !== TS_PINNED) return bad(`gói '${(args[1] ?? "").slice(0, 60)}' không được phép (chỉ ${TS_PINNED})`);
+		if (args[2] !== "tsc") return bad(`sau -p ${TS_PINNED} phải là 'tsc'`);
 		return OK;
 	}
-	if (rest[0] !== "tsc") return bad(`'${(rest[0] ?? "").slice(0, 60)}' không được phép`);
+	if (args[0] !== "tsc") return bad(`'${(args[0] ?? "").slice(0, 60)}' không được phép`);
 	const pkg = path.join(cwd, "node_modules", "typescript", "package.json");
-	if (!fs.existsSync(pkg) || !isInside(realish(pkg), env.root))
-		return bad("không có node_modules/typescript cục bộ trong thư mục làm việc (bunx sẽ tải gói 'tsc' giả trên npm)");
-	return OK;
+	if (fs.existsSync(pkg) && isInside(realish(pkg), env.root)) return OK;
+	if (env.sandboxed && vendorTsc() && fs.existsSync(vendorTsc())) return OK;
+	return bad("không có node_modules/typescript cục bộ (hoặc vendor tsc trong sandbox); bunx sẽ tải gói 'tsc' giả trên npm");
+}
+
+/** Lệnh có đoạn nào khớp bash.sandbox (test/build chạy mã của repo)? */
+function matchesSandboxList(command: string, env: Env): boolean {
+	const list = env.policy.bash.sandbox ?? [];
+	if (!list.length) return false;
+	const p = parseShell(command);
+	return p.segments.some((seg) => {
+		const forms = [seg.text, unwrap(seg.tokens.map((t) => t.text)).tokens.join(" ")];
+		return list.some((pat) => forms.some((f) => matchCommand(pat, f)));
+	});
+}
+
+const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+
+/**
+ * Trong coder-sandbox: lệnh khớp bash.sandbox được viết lại để chạy trong sandbox LỒNG (lib/sandbox-exec.sh: không mạng,
+ * env allowlist không key, agent-dir/.env/bots bị che). Trả lý do chặn nếu không bọc được (fail-closed).
+ */
+function wrapNested(input: Record<string, unknown>, env: Env): string | null {
+	if (!env.sandboxed) return null;
+	const command = String(input.command ?? "");
+	if (!matchesSandboxList(command, env)) return null;
+	const home = process.env.CODER_HOME;
+	const wrapper = home ? path.join(home, "lib/sandbox-exec.sh") : "";
+	if (!wrapper || !fs.existsSync(wrapper)) return "Lệnh test/build phải chạy trong sandbox lồng nhưng không thấy lib/sandbox-exec.sh (CODER_HOME); bị chặn.";
+	input.command = `${shq(wrapper)} -- ${shq(command)}`;
+	return null;
 }
 
 function makeCtx(env: Env, state: { cwd: string }): VetCtx {
@@ -712,11 +740,18 @@ export default function botPermissions(pi: ExtensionAPI): void {
 		} catch (e) {
 			d = no("internal-error", `Lỗi khi kiểm tra quyền (chặn để an toàn): ${(e as Error).message}`);
 		}
+		const nest = () => {
+			if (event.toolName !== "bash") return undefined;
+			const why = wrapNested(event.input as Record<string, unknown>, env);
+			if (!why) return undefined;
+			audit(agentDir, env.policy.audit, { tool: event.toolName, decision: "block", rule: "nested-sandbox", reason: why, target });
+			return { block: true as const, reason: `Blocked by bot policy [nested-sandbox]: ${why}` };
+		};
 		if (d.ok) {
 			audit(agentDir, env.policy.audit, { tool: event.toolName, decision: "allow", mode: env.policy.mode, target });
-			return;
+			return nest();
 		}
-		if (d.ask) return resolveAsk(event.toolName, event.input as Record<string, unknown>, d, env, ctx, target);
+		if (d.ask) return (await resolveAsk(event.toolName, event.input as Record<string, unknown>, d, env, ctx, target)) ?? nest();
 		const reason = `Blocked by bot policy [${d.rule}]: ${d.reason}`;
 		audit(agentDir, env.policy.audit, { tool: event.toolName, decision: "block", rule: d.rule, reason: scrub(reason), target });
 		return { block: true, reason };
