@@ -377,6 +377,59 @@ test("S11: sandbox lồng: .git chỉ-đọc (repo thường + git worktree), fi
 	assert.match(fs.readFileSync(path.join(wt, ".git"), "utf8"), /^gitdir: /);
 });
 
+test("S13: git worktree: lớp ngoài TỰ gắn chỉ-đọc gitdir + commondir thật (không cần CODER_EXTRA_*); gitdir hỏng => lớp lồng báo lỗi rõ", { skip: !HAS_BWRAP && "không có bwrap" }, () => {
+	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "sbx-wt-")));
+	cleanups.push(root);
+	const here = fakeCoder(root);
+	const W = path.join(here, "lib/sandbox-exec.sh");
+	const git = (cwd, ...a) => execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...a], { cwd, stdio: "pipe" });
+	const main = path.join(root, "main");
+	fs.mkdirSync(main);
+	fs.writeFileSync(path.join(main, "m.txt"), "m\n");
+	git(main, "init", "-q");
+	git(main, "add", "m.txt");
+	git(main, "commit", "-qm", "i");
+	const wt = path.join(root, "wt");
+	git(main, "worktree", "add", "-q", wt);
+	const s = [
+		"git log --oneline -1 >/dev/null && echo OUTERREAD=ok || echo OUTERREAD=fail",
+		`touch ${main}/.git/outer-probe 2>/dev/null && echo OUTERW=ok || echo OUTERW=fail`,
+		`${W} -- 'git log --oneline -1 >/dev/null' && echo WTREAD=ok || echo WTREAD=fail`,
+		`${W} -- 'echo evil > ${main}/.git/hooks/pre-commit' 2>/dev/null && echo CHOOK=ok || echo CHOOK=fail`,
+		`${W} -- 'echo y > new.txt' && echo WORKWRITE=ok || echo WORKWRITE=fail`,
+	].join("; ");
+	const r = runSbx(here, wt, s);
+	assert.equal(r.status, 0, r.out);
+	for (const want of ["OUTERREAD=ok", "OUTERW=fail", "WTREAD=ok", "CHOOK=fail", "WORKWRITE=ok"]) assert.match(r.out, new RegExp(`^${want}$`, "m"), r.out);
+	assert.ok(!fs.existsSync(path.join(main, ".git/outer-probe")));
+	assert.ok(fs.existsSync(path.join(wt, "new.txt")));
+
+	// Phá: gitdir trỏ tới chỗ không tồn tại => lớp lồng KHÔNG thoát im lặng mà báo lỗi rõ (exit 4)
+	const bad = path.join(root, "badwt");
+	fs.mkdirSync(bad);
+	fs.writeFileSync(path.join(bad, ".git"), `gitdir: ${root}/nope/.git/worktrees/x\n`);
+	const r2 = runSbx(here, bad, `${W} -- 'echo RAN'; echo RC=$?`);
+	assert.match(r2.out, /^RC=4$/m, r2.out);
+	assert.match(r2.out, /sandbox-exec: từ chối chạy: gitdir của worktree/, r2.out);
+	assert.doesNotMatch(r2.out, /^RAN$/m, r2.out);
+});
+
+test("S14: sandbox lồng từ chối chạy khi .git là symlink (báo lỗi rõ, exit 4)", { skip: !HAS_BWRAP && "không có bwrap" }, () => {
+	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "sbx-gl-")));
+	cleanups.push(root);
+	const here = fakeCoder(root);
+	const W = path.join(here, "lib/sandbox-exec.sh");
+	const real = path.join(root, "work/realgit");
+	fs.mkdirSync(real, { recursive: true });
+	execFileSync("git", ["init", "-q", "--bare", real]);
+	const work = path.join(root, "work");
+	fs.symlinkSync(real, path.join(work, ".git"));
+	const r = runSbx(here, work, `${W} -- 'echo RAN'; echo RC=$?`);
+	assert.match(r.out, /^RC=4$/m, r.out);
+	assert.match(r.out, /sandbox-exec: từ chối chạy: .*\.git là symlink/, r.out);
+	assert.doesNotMatch(r.out, /^RAN$/m, r.out);
+});
+
 test("S12: secret-files.mjs dùng đúng isSecretName, giới hạn độ sâu, bỏ node_modules/.git/vendor", () => {
 	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "sbx-sf-")));
 	cleanups.push(root);

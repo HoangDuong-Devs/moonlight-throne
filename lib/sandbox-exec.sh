@@ -40,16 +40,22 @@ CWD="$PWD"; case "$CWD/" in "$WORKDIR"/*) ;; *) CWD="$WORKDIR" ;; esac
 # => gắn chỉ-đọc cả gitdir thật và commondir của nó.
 ro_git() {
   local g="$1/.git" gd cd
-  if [ -d "$g" ] && [ ! -L "$g" ]; then A+=(--ro-bind "$g" "$g")
+  if [ -L "$g" ]; then
+    echo "sandbox-exec: từ chối chạy: $g là symlink (-> $(readlink "$g")); không gắn chỉ-đọc an toàn được" >&2; exit 4
+  elif [ -d "$g" ]; then A+=(--ro-bind "$g" "$g")
   elif [ -f "$g" ]; then
     A+=(--ro-bind "$g" "$g")
-    gd="$(sed -n 's/^gitdir: //p' "$g" | head -n1)"; [ -n "$gd" ] || return 0
+    gd="$(sed -n 's/^gitdir: //p' "$g" | head -n1)"
+    [ -n "$gd" ] || { echo "sandbox-exec: từ chối chạy: $g không có dòng 'gitdir: '" >&2; exit 4; }
     case "$gd" in /*) ;; *) gd="$1/$gd" ;; esac
-    gd="$(readlink -f "$gd")"; [ -d "$gd" ] || return 0
+    gd="$(readlink -f "$gd" 2>/dev/null || true)"
+    [ -n "$gd" ] && [ -d "$gd" ] || { echo "sandbox-exec: từ chối chạy: gitdir của worktree ($(sed -n 's/^gitdir: //p' "$g" | head -n1)) không thấy trong sandbox; lớp ngoài chưa gắn nó (chạy qua coder-sandbox bản mới hoặc CODER_EXTRA_RO)" >&2; exit 4; }
     A+=(--ro-bind "$gd" "$gd")
     if [ -f "$gd/commondir" ]; then
       cd="$(head -n1 "$gd/commondir")"; case "$cd" in /*) ;; *) cd="$gd/$cd" ;; esac
-      cd="$(readlink -f "$cd")"; [ -d "$cd" ] && A+=(--ro-bind "$cd" "$cd")
+      cd="$(readlink -f "$cd" 2>/dev/null || true)"
+      [ -n "$cd" ] && [ -d "$cd" ] || { echo "sandbox-exec: từ chối chạy: commondir của worktree ($gd/commondir) không thấy trong sandbox" >&2; exit 4; }
+      A+=(--ro-bind "$cd" "$cd")
     fi
   fi
 }
@@ -63,4 +69,9 @@ for v in LANG LC_ALL TERM TZ NODE_ENV NO_COLOR FORCE_COLOR; do
   [ -n "${!v:-}" ] && A+=(--setenv "$v" "${!v}")
 done
 # Chính tiến trình bwrap (PID 1 của namespace lồng) cũng phải có env sạch: /proc/1/environ đọc được từ bên trong.
-exec env -i PATH=/usr/local/bin:/usr/bin:/bin "$(command -v bwrap)" "${A[@]}" bash -c "$CMD"
+# Lỗi của chính bwrap (mount hỏng...) phải hiện rõ, không thoát im lặng: chạy thử bwrap với `true` trước.
+BW="$(command -v bwrap)"
+if ! ERR="$(env -i PATH=/usr/local/bin:/usr/bin:/bin "$BW" "${A[@]}" true 2>&1)"; then
+  echo "sandbox-exec: không dựng được sandbox lồng: ${ERR:-bwrap thoát lỗi không rõ lý do}" >&2; exit 5
+fi
+exec env -i PATH=/usr/local/bin:/usr/bin:/bin "$BW" "${A[@]}" bash -c "$CMD"

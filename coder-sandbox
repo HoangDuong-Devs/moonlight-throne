@@ -8,6 +8,7 @@
 # Trong sandbox: hệ thống read-only; $HOME là tmpfs trống; không có docker.sock/ssh-agent/dbus; PID/IPC/UTS namespace riêng;
 # chỉ thư mục làm việc (CODER_WORKDIR) và dữ liệu chạy của coder được ghi. File .env bị che; key đưa vào bằng biến môi trường.
 # Biến môi trường của shell gọi KHÔNG được kế thừa (--clearenv); chỉ truyền: key model, PATH tối thiểu, CODER_*, và CODER_PASS_ENV.
+# Git worktree (.git là file): gitdir + commondir thật tự được gắn chỉ-đọc.
 # Tùy chọn: CODER_EXTRA_RW / CODER_EXTRA_RO (danh sách đường dẫn ngăn bằng ':'), CODER_PASS_ENV (tên biến ngăn bằng ','),
 #           CODER_SANDBOX_NET=off (không mạng; chỉ dùng được với model cục bộ).
 # Giới hạn: job subagent tách rời (detached) KHÔNG sống tiếp sau khi lệnh kết thúc (namespace PID bị hủy).
@@ -79,6 +80,27 @@ case "$(readlink -f "$ENVF" 2>/dev/null || true)" in
 esac
 [ -f "$HOME/.gitconfig" ] && A+=(--ro-bind "$HOME/.gitconfig" "$HOME/.gitconfig")
 A+=(--bind "$WORKDIR" "$WORKDIR")
+# Git worktree: .git là file "gitdir: X" trỏ ra NGOÀI workdir (thường dưới $HOME, bị tmpfs che) => tự gắn CHỈ-ĐỌC gitdir thật + commondir,
+# để git và sandbox lồng (lib/sandbox-exec.sh) thấy được. Đặt TRƯỚC CODER_EXTRA_RW/RO để người gọi vẫn ghi đè được (vd. cần git commit).
+# .git là symlink: không tự gắn gì; sandbox lồng sẽ từ chối chạy.
+wt_git_paths() {
+  local g="$1/.git" gd cd
+  [ -f "$g" ] && [ ! -L "$g" ] || return 0
+  gd="$(sed -n 's/^gitdir: //p' "$g" | head -n1)"; [ -n "$gd" ] || return 0
+  case "$gd" in /*) ;; *) gd="$1/$gd" ;; esac
+  gd="$(readlink -f "$gd" 2>/dev/null || true)"
+  [ -n "$gd" ] && [ -d "$gd" ] || { echo "coder-sandbox: cảnh báo: $g trỏ tới gitdir không tồn tại" >&2; return 0; }
+  printf '%s\n' "$gd"
+  if [ -f "$gd/commondir" ]; then
+    cd="$(head -n1 "$gd/commondir")"; case "$cd" in /*) ;; *) cd="$gd/$cd" ;; esac
+    cd="$(readlink -f "$cd" 2>/dev/null || true)"; [ -n "$cd" ] && [ -d "$cd" ] && printf '%s\n' "$cd"
+  fi
+  return 0
+}
+while IFS= read -r p; do
+  case "$p/" in "$WORKDIR"/*) continue ;; esac   # đã nằm trong workdir (rw) => giữ nguyên
+  A+=(--ro-bind "$p" "$p")
+done < <(wt_git_paths "$WORKDIR")
 IFS=: read -r -a _rw <<< "${CODER_EXTRA_RW:-}"; for p in "${_rw[@]:-}"; do [ -n "$p" ] && A+=(--bind "$p" "$p"); done
 IFS=: read -r -a _ro <<< "${CODER_EXTRA_RO:-}"; for p in "${_ro[@]:-}"; do [ -n "$p" ] && A+=(--ro-bind "$p" "$p"); done
 A+=(--unshare-pid --unshare-ipc --unshare-uts --die-with-parent --new-session --chdir "$WORKDIR")
