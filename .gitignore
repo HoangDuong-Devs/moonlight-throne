@@ -1,0 +1,11 @@
+.env
+agent/auth.json
+agent/models-store.json
+agent/sessions/
+agent/audit.log
+agent/bin/
+!.env.example
+agent/snapshots/
+agent/grants/
+agent/permission-requests/
+bots/

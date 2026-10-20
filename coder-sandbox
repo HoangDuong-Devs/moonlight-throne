@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# coder-sandbox: chạy `coder` trong bubblewrap (bwrap) - cách ly nhẹ, không cần root/Docker.
+#   CODER_WORKDIR=/path/repo ./coder-sandbox -p --model grok-4.5 "việc cần làm"      (mặc định: thư mục hiện tại)
+#   ./coder-sandbox exec -- bash -c 'lệnh'      # chạy lệnh tùy ý TRONG sandbox (để kiểm tra cách ly)
+# Lệnh quản trị (snapshots|revert|pending|approve|deny|grants|revoke|jobs|models|provision|snapshot-prune) chạy NGOÀI sandbox, qua `coder`.
+# `coder-sandbox run ...` = `coder run --sandbox ...` (kết quả JSON).
+#
+# Trong sandbox: hệ thống read-only; $HOME là tmpfs trống; không có docker.sock/ssh-agent/dbus; PID/IPC/UTS namespace riêng;
+# chỉ thư mục làm việc (CODER_WORKDIR) và dữ liệu chạy của coder được ghi. File .env bị che; key đưa vào bằng biến môi trường.
+# Biến môi trường của shell gọi KHÔNG được kế thừa (--clearenv); chỉ truyền: key model, PATH tối thiểu, CODER_*, và CODER_PASS_ENV.
+# Tùy chọn: CODER_EXTRA_RW / CODER_EXTRA_RO (danh sách đường dẫn ngăn bằng ':'), CODER_PASS_ENV (tên biến ngăn bằng ','),
+#           CODER_SANDBOX_NET=off (không mạng; chỉ dùng được với model cục bộ).
+# Giới hạn: job subagent tách rời (detached) KHÔNG sống tiếp sau khi lệnh kết thúc (namespace PID bị hủy).
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PI_DIR="$(cd "$HERE/../pi" && pwd)"
+
+case "${1:-}" in
+  models|snapshots|snapshot-diff|snapshot-prune|revert|jobs|pending|approve|deny|grants|revoke|provision) exec "$HERE/coder" "$@" ;;
+  run) shift; exec node "$HERE/lib/run-cli.mjs" --sandbox "$@" ;;
+esac
+
+command -v bwrap >/dev/null || { echo "coder-sandbox: chưa cài bubblewrap (apt install bubblewrap)" >&2; exit 127; }
+NODE_BIN="$(command -v node)" || { echo "coder-sandbox: không thấy node" >&2; exit 127; }
+NODE_ROOT="$(dirname "$(dirname "$(readlink -f "$NODE_BIN")")")"
+
+EXEC_MODE=0
+if [ "${1:-}" = "exec" ]; then EXEC_MODE=1; shift; [ "${1:-}" = "--" ] && shift; fi
+
+WORKDIR="$(readlink -f "${CODER_WORKDIR:-$PWD}")"
+case "$WORKDIR" in
+  /|"$HOME"|/home|/usr|/etc|/var|/tmp|"$HERE"|"$HERE"/*|"$PI_DIR"|"$PI_DIR"/*)
+    echo "coder-sandbox: từ chối thư mục làm việc '$WORKDIR' (quá rộng hoặc là chính thư mục công cụ)" >&2; exit 2 ;;
+esac
+[ -d "$WORKDIR" ] || { echo "coder-sandbox: thư mục làm việc không tồn tại: $WORKDIR" >&2; exit 2; }
+
+# Đọc env (key) NGOÀI sandbox trước, vì AGENT có thể được đặt qua env file.
+ENVF="${CODER_ENV_FILE:-$HERE/.env}"
+if [ -f "$ENVF" ]; then set -a; . "$ENVF"; set +a; fi
+AGENT="$(readlink -f "${PI_CODING_AGENT_DIR:-$HERE/agent}")"
+case "$AGENT/" in "$WORKDIR"/*) echo "coder-sandbox: từ chối: thư mục làm việc '$WORKDIR' chứa agent-dir '$AGENT'" >&2; exit 2 ;; esac
+case "$WORKDIR/" in "$AGENT"/*) echo "coder-sandbox: từ chối: thư mục làm việc nằm trong agent-dir" >&2; exit 2 ;; esac
+
+# Key đã được nạp ở trên (NGOÀI sandbox); chỉ truyền đúng các biến cần thiết vào trong.
+mkdir -p "$HERE/bots"
+mkdir -p "$AGENT/sessions" "$AGENT/snapshots" "$AGENT/permission-requests" "$AGENT/grants" "$AGENT/grants-used"
+touch "$AGENT/audit.log"
+for f in auth.json models-store.json; do [ -e "$AGENT/$f" ] || { printf '{}\n' > "$AGENT/$f"; chmod 600 "$AGENT/$f"; }; done
+
+# DNS: /etc/resolv.conf thường là symlink vào /run/...; phải gắn lại đúng thư mục sau khi phủ tmpfs lên /run.
+RESOLV="$(readlink -f /etc/resolv.conf 2>/dev/null || true)"
+RESOLV_ARGS=()
+case "$RESOLV" in /run/*) RESOLV_ARGS=(--ro-bind "$(dirname "$RESOLV")" "$(dirname "$RESOLV")") ;; esac
+
+A=(--ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --tmpfs /run --tmpfs "$HOME")
+A+=("${RESOLV_ARGS[@]}")
+A+=(--ro-bind "$NODE_ROOT" "$NODE_ROOT")                      # node + codegraph (cài global) nằm dưới nvm trong $HOME
+A+=(--ro-bind "$HERE" "$HERE" --ro-bind "$PI_DIR" "$PI_DIR")   # mã coder + Pi: chỉ đọc
+# agent-dir: CHỈ-ĐỌC (chính sách, extension, grants, nhật ký host... mã trong sandbox không sửa được), rồi mở rw ĐÚNG chỗ Pi/extension cần ghi.
+# Pi tạo file khóa (settings.json.lock, auth.json.lock...) CẠNH file cấu hình => phủ tmpfs lên chính đường dẫn agent-dir (mất khi thoát),
+# rồi gắn từng phần: tĩnh = chỉ-đọc; cần lưu = rw. host-audit.jsonl và mọi thứ không liệt kê ở đây KHÔNG hiện trong sandbox.
+A+=(--tmpfs "$AGENT")
+for f in extensions agents skills bin grants permissions.json APPEND_SYSTEM.md mcp.json models.json settings.json snapshot.json formatter.json web.json subagent.json; do
+  [ -e "$AGENT/$f" ] && A+=(--ro-bind "$AGENT/$f" "$AGENT/$f")
+done
+for d in sessions snapshots permission-requests grants-used; do A+=(--bind "$AGENT/$d" "$AGENT/$d"); done
+for f in audit.log auth.json models-store.json; do A+=(--bind "$AGENT/$f" "$AGENT/$f"); done   # auth.json: Pi làm mới OAuth; audit.log: do extension ghi (KHÔNG tin cậy, xem host-audit.jsonl)
+[ -e "$HERE/.env" ] && A+=(--ro-bind /dev/null "$HERE/.env")   # che .env
+A+=(--tmpfs "$HERE/bots")                                      # che env riêng của mọi bot (credential)
+case "$(readlink -f "$ENVF" 2>/dev/null || true)" in
+  "$HERE"/*|"") ;;
+  *) [ -f "$ENVF" ] && A+=(--ro-bind /dev/null "$(readlink -f "$ENVF")") ;;   # env file đặt ngoài thư mục coder cũng bị che
+esac
+[ -f "$HOME/.gitconfig" ] && A+=(--ro-bind "$HOME/.gitconfig" "$HOME/.gitconfig")
+A+=(--bind "$WORKDIR" "$WORKDIR")
+IFS=: read -r -a _rw <<< "${CODER_EXTRA_RW:-}"; for p in "${_rw[@]:-}"; do [ -n "$p" ] && A+=(--bind "$p" "$p"); done
+IFS=: read -r -a _ro <<< "${CODER_EXTRA_RO:-}"; for p in "${_ro[@]:-}"; do [ -n "$p" ] && A+=(--ro-bind "$p" "$p"); done
+A+=(--unshare-pid --unshare-ipc --unshare-uts --die-with-parent --new-session --chdir "$WORKDIR")
+[ "${CODER_SANDBOX_NET:-on}" = "off" ] && A+=(--unshare-net)
+
+A+=(--clearenv --setenv HOME "$HOME" --setenv PATH "$(dirname "$NODE_BIN"):/usr/local/bin:/usr/bin:/bin" \
+    --setenv LANG "${LANG:-C.UTF-8}" --setenv TERM "${TERM:-dumb}" \
+    --setenv PI_CODING_AGENT_DIR "$AGENT" --setenv CODER_WORKDIR "$WORKDIR")
+for v in COMMANDCODE_API_KEY XAI_API_KEY EXA_API_KEY GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL \
+         CODER_JOB_NAMESPACE CODER_ASK_TIMEOUT_MS CODER_PLAN CODER_ALLOW_STDIN; do
+  [ -n "${!v:-}" ] && A+=(--setenv "$v" "${!v}")
+done
+IFS=, read -r -a _pe <<< "${CODER_PASS_ENV:-}"; for v in "${_pe[@]:-}"; do [ -n "$v" ] && [ -n "${!v:-}" ] && A+=(--setenv "$v" "${!v}"); done
+
+if [ "$EXEC_MODE" = 1 ]; then exec bwrap "${A[@]}" "$@"; fi
+exec bwrap "${A[@]}" "$HERE/coder" "$@"
