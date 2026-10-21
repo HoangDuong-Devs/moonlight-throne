@@ -15,7 +15,7 @@ Dành cho người viết BOT điều phối gọi `mth`. Extension `bot-permiss
 
 Mỗi lệnh bash được tách theo `;`, `&&`, `|`...: chỉ cần một đoạn khớp ask (và các đoạn khác hợp lệ) là cả lệnh thành một yêu cầu; một đoạn bị chặn cứng thì cả lệnh bị chặn, không ask.
 
-Mẫu ask khởi điểm: `git add/commit/stash/switch/checkout/merge/rebase/cherry-pick/tag`, `npm|pnpm|yarn install/add/ci/update/uninstall`, `pip install`, `cargo add/install`, `go get`, ghi vào lockfile (`package-lock.json`, `*.lock`, `pnpm-lock.yaml`, `go.sum`), tool `web_fetch`/`web_search`. `git push`, `npm install -g`, `rm -rf` vẫn nằm trong deny (không ask được). Chỉnh trong `agent/permissions.json`; hết giờ hỏi: `"ask": {"timeoutMs": 120000}` (hoặc env `CODER_ASK_TIMEOUT_MS` cho một tiến trình).
+Mẫu ask khởi điểm: `git add/commit/stash/switch/checkout/merge/rebase/cherry-pick/tag`, `npm|pnpm|yarn install/add/ci/update/uninstall`, `pip install`, `cargo add/install`, `go get`, ghi vào lockfile (`package-lock.json`, `*.lock`, `pnpm-lock.yaml`, `go.sum`), tool `web_fetch`/`web_search`. `git push`, `npm install -g`, `rm -rf` vẫn nằm trong deny (không ask được). Chỉnh trong `agent/permissions.json`; hết giờ hỏi: `"ask": {"timeoutMs": 120000}` (hoặc env `MTH_ASK_TIMEOUT_MS` cho một tiến trình).
 
 ## 2. Định danh và phạm vi duyệt
 
@@ -79,7 +79,7 @@ Blocked by bot policy [needs_permission]: Hành động này cần bot điều p
 
 Cùng thông tin có trong luồng JSON dưới dạng event `entry_appended` (entry `customType: "permission_request"`) và trong file `permission-requests/<id>.json` (thêm `status`, `createdAt`). Bot nên dùng `--session-id` cố định để gọi lại đúng session.
 
-CLI (`node lib/permissions-cli.mjs`, Node thuần; thêm `--json` để xuất JSON một dòng; `--agent-dir DIR` nếu cần, mặc định `$CODER_AGENT_DIR` hoặc `<mth>/agent`):
+CLI (`node lib/permissions-cli.mjs`, Node thuần; thêm `--json` để xuất JSON một dòng; `--agent-dir DIR` nếu cần, mặc định `$MTH_AGENT_DIR` hoặc `<mth>/agent`):
 
 | Lệnh | Ý nghĩa |
 |---|---|
@@ -113,6 +113,6 @@ Lưu ý: duyệt `once` bị tiêu thụ khi lệnh chạy (ghi vào `grants-use
 
 ## 5. Giới hạn
 
-`bash.sandbox` (mảng mẫu lệnh, chỉ cho bash): lệnh đã khớp `allow` mà khớp `bash.sandbox` chỉ tự chạy khi extension phát hiện đang ở trong `mth-sandbox` (`CODER_SANDBOXED=1` do mth-sandbox đặt VÀ `/proc/1/comm` = `bwrap`); ngoài sandbox => ask với `rule: "bash.sandbox"`. Trong sandbox, extension viết lại lệnh khớp `bash.sandbox` thành `<CODER_HOME>/lib/sandbox-exec.sh -- '<lệnh>'` (bwrap lồng: `--unshare-net`, PID ns + /proc mới, `--clearenv` + env allowlist, chính tiến trình bwrap chạy với `env -i`, `$HOME`//tmp tmpfs, agent-dir tmpfs, `.env`/`bots/` bị che, file secret trong workdir theo `isSecretName` tới độ sâu 6 bị che bằng `lib/secret-files.mjs` (bỏ qua node_modules/.git/vendor; liệt kê lỗi => từ chối chạy), `.git` + gitdir/commondir của worktree gắn chỉ-đọc SAU bind rw của workdir); thiếu wrapper => chặn. `bunx *` vẫn nằm trong `bash.sandbox` có chủ ý (phòng thủ nhiều lớp). Luật cứng bunx: chỉ `bunx -p|--package typescript@5.9.3 tsc ...` (đúng phiên bản) hoặc `bunx tsc ...` khi có `node_modules/typescript` cục bộ (realpath trong thư mục làm việc) hoặc đang trong sandbox và có vendor tsc; `bun x` bị cấm; biến `BUN_*` bị cấm gán trước lệnh.
+`bash.sandbox` (mảng mẫu lệnh, chỉ cho bash): lệnh đã khớp `allow` mà khớp `bash.sandbox` chỉ tự chạy khi extension phát hiện đang ở trong `mth-sandbox` (`MTH_SANDBOXED=1` do mth-sandbox đặt VÀ `/proc/1/comm` = `bwrap`; tên cũ `CODER_SANDBOXED=1` vẫn được nhận); ngoài sandbox => ask với `rule: "bash.sandbox"`. Trong sandbox, extension viết lại lệnh khớp `bash.sandbox` thành `<MTH_HOME>/lib/sandbox-exec.sh -- '<lệnh>'` (bwrap lồng: `--unshare-net`, PID ns + /proc mới, `--clearenv` + env allowlist, chính tiến trình bwrap chạy với `env -i`, `$HOME`//tmp tmpfs, agent-dir tmpfs, `.env`/`bots/` bị che, file secret trong workdir theo `isSecretName` tới độ sâu 6 bị che bằng `lib/secret-files.mjs` (bỏ qua node_modules/.git/vendor; liệt kê lỗi => từ chối chạy), `.git` + gitdir/commondir của worktree gắn chỉ-đọc SAU bind rw của workdir); thiếu wrapper => chặn. `bunx *` vẫn nằm trong `bash.sandbox` có chủ ý (phòng thủ nhiều lớp). Luật cứng bunx: chỉ `bunx -p|--package typescript@5.9.3 tsc ...` (đúng phiên bản) hoặc `bunx tsc ...` khi có `node_modules/typescript` cục bộ (realpath trong thư mục làm việc) hoặc đang trong sandbox và có vendor tsc; `bun x` bị cấm; biến `BUN_*` bị cấm gán trước lệnh.
 
 Đây là kiểm soát ở tầng tool, không phải sandbox: một chương trình đã được allow (ví dụ `node --test`, `python3 -m pytest`) vẫn chạy mã tùy ý (kể cả ghi `.git/config`, hook, `package.json`...). Muốn an toàn thật hãy chạy mth qua `mth-sandbox` (user/container riêng) với `grants/` gắn CHỈ-ĐỌC và CLI duyệt chạy ngoài sandbox. Còn lại: (1) chỉ kiểm tra được `.git/config` của repo ở thời điểm gọi (TOCTOU nhỏ), cấu hình git toàn cục/hệ thống tin tưởng như cũ; (2) `git commit`/`rebase` đã duyệt vẫn chạy hook trong `.git/hooks` (nếu mã trong sandbox đã cài hook); (3) `plan-mode` chỉ chặn đường dẫn secret cơ bản — kiểm tra jail/đọc đầy đủ do `bot-permissions` thực hiện khi cùng được nạp.

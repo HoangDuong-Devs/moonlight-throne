@@ -12,16 +12,16 @@
  *   (explore...) không bao giờ có quyền ghi.
  *
  * Cấu hình tùy chọn: <agent-dir>/subagent.json (hoặc biến môi trường):
- *   maxDepth (CODER_SUBAGENT_MAX_DEPTH, mặc định 2)
- *   maxBackground (CODER_SUBAGENT_MAX_BACKGROUND, mặc định 4)
- *   timeoutMs (CODER_SUBAGENT_TIMEOUT_MS, mặc định 600000)
+ *   maxDepth (MTH_SUBAGENT_MAX_DEPTH, mặc định 2)
+ *   maxBackground (MTH_SUBAGENT_MAX_BACKGROUND, mặc định 4)
+ *   timeoutMs (MTH_SUBAGENT_TIMEOUT_MS, mặc định 600000)
  *   allowProjectAgents (mặc định false: chỉ nạp <agent-dir>/agents)
  *   waitForBackground (mặc định true: ở chế độ -p/json, cha chờ job nền xong rồi nhận thông báo)
  *   detached (mặc định false: job nền chạy TÁCH RỜI, sống tiếp sau khi cha thoát; tham số tool `detached` ghi đè)
  *   strictParent (mặc định true: từ chối resume/status/cancel job thuộc cây khác CHỈ khi cả hai bên có rootId và khác nhau;
  *     thiếu rootId ở một bên (vd. chạy --no-session) thì MỞ, cố ý để không phá luồng --no-session hợp lệ.
  *     "always": chỉ cho phép khi cả hai có rootId và bằng nhau (thiếu root => từ chối); false: tắt)
- *   rootKey (hoặc env CODER_JOB_NAMESPACE): namespace chung cho nhiều lần gọi `mth -p` khác nhau
+ *   rootKey (hoặc env MTH_JOB_NAMESPACE): namespace chung cho nhiều lần gọi `mth -p` khác nhau
  *   retentionDays (mặc định 7: dọn job đã xong quá hạn)
  *
  * Job tách rời được quản lý bằng lib/subagent-cli.mjs (list/status/wait/result/cancel).
@@ -37,6 +37,7 @@ import { Type } from "typebox";
 import { type AgentConfig, discoverAgents } from "./agents.ts";
 // @ts-ignore - module Node thuần dùng chung với lib/subagent-cli.mjs
 import * as core from "./jobs-core.mjs";
+import { mthEnv } from "../../../lib/env.mjs";
 
 // ---------------------------------------------------------------- cấu hình
 
@@ -61,20 +62,20 @@ function loadConfig(): Config {
 		file = JSON.parse(fs.readFileSync(path.join(getAgentDir(), "subagent.json"), "utf-8"));
 	} catch {}
 	const num = (env: string, key: string, def: number) => {
-		const raw = process.env[env] ?? process.env[env.replace(/^CODER_/, "PI_")] ?? file[key]; // PI_*: tên cũ, vẫn nhận
+		const raw = mthEnv(env) ?? process.env[env.replace(/^MTH_/, "PI_")] ?? file[key]; // PI_*: tên cũ hơn, vẫn nhận
 		const v = Number(raw);
 		return Number.isFinite(v) && v >= 0 && raw !== undefined ? v : def;
 	};
 	return {
-		maxDepth: num("CODER_SUBAGENT_MAX_DEPTH", "maxDepth", 2),
-		maxBackground: num("CODER_SUBAGENT_MAX_BACKGROUND", "maxBackground", 4),
-		timeoutMs: num("CODER_SUBAGENT_TIMEOUT_MS", "timeoutMs", 600_000),
+		maxDepth: num("MTH_SUBAGENT_MAX_DEPTH", "maxDepth", 2),
+		maxBackground: num("MTH_SUBAGENT_MAX_BACKGROUND", "maxBackground", 4),
+		timeoutMs: num("MTH_SUBAGENT_TIMEOUT_MS", "timeoutMs", 600_000),
 		allowProjectAgents: file.allowProjectAgents === true,
 		waitForBackground: file.waitForBackground !== false,
 		detached: file.detached === true,
 		strictParent: file.strictParent === "always" ? "always" : file.strictParent !== false,
-		rootKey: validKey(process.env.CODER_JOB_NAMESPACE) ?? validKey(file.rootKey),
-		retentionDays: num("CODER_SUBAGENT_RETENTION_DAYS", "retentionDays", 7),
+		rootKey: validKey(mthEnv("MTH_JOB_NAMESPACE")) ?? validKey(file.rootKey),
+		retentionDays: num("MTH_SUBAGENT_RETENTION_DAYS", "retentionDays", 7),
 	};
 }
 
@@ -83,10 +84,10 @@ const SESSION_ID_RE = /^[A-Za-z0-9._-]{1,100}$/;
 const OUTPUT_CAP = 50 * 1024;
 
 const currentDepth = () => {
-	const n = Number(process.env.CODER_SUBAGENT_DEPTH);
+	const n = Number(mthEnv("MTH_SUBAGENT_DEPTH"));
 	return Number.isFinite(n) && n > 0 ? n : 0;
 };
-const readonlyCeiling = () => process.env.CODER_SUBAGENT_READONLY === "1";
+const readonlyCeiling = () => mthEnv("MTH_SUBAGENT_READONLY") === "1";
 const sessionsDir = () => path.join(getAgentDir(), "sessions", "subagents");
 
 // ---------------------------------------------------------------- metadata phiên con
@@ -110,7 +111,7 @@ interface Meta {
 	pidStart?: string;
 	childPid?: number;
 	childStart?: string;
-	/** Cây sở hữu: "ns:<CODER_JOB_NAMESPACE|rootKey>" hoặc "sess:<id phiên gốc>". */
+	/** Cây sở hữu: "ns:<MTH_JOB_NAMESPACE|rootKey>" hoặc "sess:<id phiên gốc>". */
 	rootId?: string;
 	parentSessionId?: string;
 }
@@ -124,7 +125,7 @@ function callerRoot(config: Config, ctx: ExtensionContext): { rootId?: string; s
 	try {
 		if (ctx.sessionManager.isPersisted()) sessionId = ctx.sessionManager.getSessionId();
 	} catch {}
-	const inherited = validKey(process.env.CODER_SUBAGENT_ROOT);
+	const inherited = validKey(mthEnv("MTH_SUBAGENT_ROOT"));
 	if (inherited) return { rootId: inherited, sessionId };
 	if (config.rootKey) return { rootId: `ns:${config.rootKey}`, sessionId };
 	return { rootId: sessionId ? `sess:${sessionId}` : undefined, sessionId };
@@ -148,7 +149,7 @@ interface RunOptions {
 	signal?: AbortSignal;
 	onProc?: (p: ChildProcess) => void;
 	rootId?: string;
-	/** Gốc jail kế thừa từ cha (CODER_WORKDIR của cha, hoặc cwd của cha). */
+	/** Gốc jail kế thừa từ cha (MTH_WORKDIR của cha, hoặc cwd của cha). */
 	jailRoot: string;
 }
 
@@ -192,14 +193,23 @@ function buildInvocation(opts: RunOptions): { command: string; args: string[]; e
 	// chỉ-đọc của agent con (--tools chỉ chặn tool, không chặn lệnh); "-"/"@" bị hiểu là cờ/tệp.
 	args.push(`Task: ${opts.prompt}`);
 	const extraEnv: Record<string, string> = {
+		MTH_SUBAGENT_DEPTH: String(currentDepth() + 1),
 		CODER_SUBAGENT_DEPTH: String(currentDepth() + 1),
 		// Con nạp lại đúng cấu hình/bot-permissions của cha và bị nhốt trong cùng jail.
+		MTH_AGENT_DIR: getAgentDir(),
 		CODER_AGENT_DIR: getAgentDir(),
 		PI_CODING_AGENT_DIR: getAgentDir(), // nội bộ: thư viện lõi đọc tên này
+		MTH_WORKDIR: opts.jailRoot,
 		CODER_WORKDIR: opts.jailRoot,
 	};
-	if (opts.rootId) extraEnv.CODER_SUBAGENT_ROOT = opts.rootId;
-	if (readonlyCeiling() || isReadonlyTools(tools)) extraEnv.CODER_SUBAGENT_READONLY = "1";
+	if (opts.rootId) {
+		extraEnv.MTH_SUBAGENT_ROOT = opts.rootId;
+		extraEnv.CODER_SUBAGENT_ROOT = opts.rootId;
+	}
+	if (readonlyCeiling() || isReadonlyTools(tools)) {
+		extraEnv.MTH_SUBAGENT_READONLY = "1";
+		extraEnv.CODER_SUBAGENT_READONLY = "1";
+	}
 	return { ...getPiInvocation(args), extraEnv };
 }
 
@@ -479,7 +489,7 @@ export default function (pi: ExtensionAPI) {
 
 			const { rootId, sessionId: parentSessionId } = callerRoot(config, ctx);
 			// Jail của con = jail của cha; cwd của con (kể cả khi resume) phải nằm trong jail.
-			const jailRoot = path.resolve(process.env.CODER_WORKDIR || ctx.cwd);
+			const jailRoot = path.resolve(mthEnv("MTH_WORKDIR") || ctx.cwd);
 			const inJail = (p: string) => p === jailRoot || p.startsWith(jailRoot + path.sep);
 
 			let sessionID = params.sessionID;

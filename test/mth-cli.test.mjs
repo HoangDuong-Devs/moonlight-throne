@@ -25,7 +25,7 @@ function layout(t) {
 	fs.writeFileSync(path.join(engineDir, "cli.js"), "");
 	const agentDir = path.join(root, "agent");
 	fs.mkdirSync(agentDir);
-	const env = { ...process.env, CODER_ENV_FILE: path.join(root, "no-such.env"), CODER_AGENT_DIR: agentDir };
+	const env = { ...process.env, MTH_ENV_FILE: path.join(root, "no-such.env"), MTH_AGENT_DIR: agentDir };
 	return { root, home, env };
 }
 
@@ -83,7 +83,7 @@ test("agent-dir.sh: bí danh coder_agent_dir vẫn hoạt động như mth_agent
 	const h = layout(t);
 	const sh = path.join(h.home, "lib/agent-dir.sh");
 	const agent = path.join(h.root, "agent-alias");
-	const r = spawnSync("bash", ["-c", `. "$1"; mth_agent_dir /d; coder_agent_dir /d`, "bash", sh], { encoding: "utf8", env: { ...h.env, CODER_AGENT_DIR: agent } });
+	const r = spawnSync("bash", ["-c", `. "$1"; mth_agent_dir /d; coder_agent_dir /d`, "bash", sh], { encoding: "utf8", env: { ...h.env, MTH_AGENT_DIR: agent } });
 	assert.equal(r.status, 0, r.stderr);
 	assert.equal(r.stderr, "");
 	assert.deepEqual(r.stdout.trim().split("\n"), [agent, agent]);

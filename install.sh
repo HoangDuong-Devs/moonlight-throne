@@ -84,7 +84,7 @@ if [ -e "$ENVF" ]; then
 elif [ $CHECK = 1 ]; then add WARN ".env" "chưa có (./install.sh sẽ tạo từ .env.example)"
 elif [ ! -f "$HERE/.env.example" ]; then add FAIL ".env" "thiếu .env.example"
 else
-  ( umask 077; { grep -v -E '^(CODER_AGENT_DIR|PI_CODING_AGENT_DIR)=' "$HERE/.env.example"; echo "CODER_AGENT_DIR=$HERE/agent"; } > "$ENVF" ) \
+  ( umask 077; { grep -v -E '^(MTH_AGENT_DIR|CODER_AGENT_DIR|PI_CODING_AGENT_DIR)=' "$HERE/.env.example"; echo "MTH_AGENT_DIR=$HERE/agent"; } > "$ENVF" ) \
     && chmod 600 "$ENVF" && add OK ".env" "đã tạo từ .env.example (chmod 600), cần điền key" || add FAIL ".env" "không tạo được"
 fi
 

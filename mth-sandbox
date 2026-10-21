@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
 # mth-sandbox: chạy `mth` trong bubblewrap (bwrap) - cách ly nhẹ, không cần root/Docker.
-#   CODER_WORKDIR=/path/repo ./mth-sandbox -p --model grok-4.5 "việc cần làm"      (mặc định: thư mục hiện tại)
+#   MTH_WORKDIR=/path/repo ./mth-sandbox -p --model grok-4.5 "việc cần làm"      (mặc định: thư mục hiện tại)
 #   ./mth-sandbox exec -- bash -c 'lệnh'      # chạy lệnh tùy ý TRONG sandbox (để kiểm tra cách ly)
 # Lệnh quản trị (snapshots|revert|pending|approve|deny|grants|revoke|jobs|models|provision|snapshot-prune) chạy NGOÀI sandbox, qua `mth`.
 # `mth-sandbox run ...` = `mth run --sandbox ...` (kết quả JSON).
 #
 # Trong sandbox: hệ thống read-only; $HOME là tmpfs trống; không có docker.sock/ssh-agent/dbus; PID/IPC/UTS namespace riêng;
-# chỉ thư mục làm việc (CODER_WORKDIR) và dữ liệu chạy của mth được ghi. File .env bị che; key đưa vào bằng biến môi trường.
-# Biến môi trường của shell gọi KHÔNG được kế thừa (--clearenv); chỉ truyền: key model, PATH tối thiểu, CODER_*, và CODER_PASS_ENV.
+# chỉ thư mục làm việc (MTH_WORKDIR) và dữ liệu chạy của mth được ghi. File .env bị che; key đưa vào bằng biến môi trường.
+# Biến môi trường của shell gọi KHÔNG được kế thừa (--clearenv); chỉ truyền: key model, PATH tối thiểu, MTH_*/CODER_*, và MTH_PASS_ENV.
 # Giá trị env (kể cả key) KHÔNG nằm trên argv: cả khối --setenv đi qua `--args 3` (NUL-separated, pipe) nên không lộ trong
 # /proc/<pid>/cmdline hay `ps`. Cùng user Unix vẫn đọc được /proc/<pid>/environ — đây là chống lộ vào log/tool output, không phải cách ly.
 # Git worktree (.git là file): gitdir + commondir thật tự được gắn chỉ-đọc.
-# Tùy chọn: CODER_EXTRA_RW / CODER_EXTRA_RO (danh sách đường dẫn ngăn bằng ':'), CODER_PASS_ENV (tên biến ngăn bằng ','),
-#           CODER_SANDBOX_NET=off (không mạng; chỉ dùng được với model cục bộ).
+# Tùy chọn: MTH_EXTRA_RW / MTH_EXTRA_RO (danh sách đường dẫn ngăn bằng ':'), MTH_PASS_ENV (tên biến ngăn bằng ','),
+#           MTH_SANDBOX_NET=off (không mạng; chỉ dùng được với model cục bộ).
+# Tên cũ CODER_* vẫn được nhận (cảnh báo lỗi thời một lần); trong sandbox cả hai tên đều được đặt.
 # Giới hạn: job subagent tách rời (detached) KHÔNG sống tiếp sau khi lệnh kết thúc (namespace PID bị hủy).
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -35,7 +36,9 @@ BUN_DIR=""
 EXEC_MODE=0
 if [ "${1:-}" = "exec" ]; then EXEC_MODE=1; shift; [ "${1:-}" = "--" ] && shift; fi
 
-WORKDIR="$(readlink -f "${CODER_WORKDIR:-$PWD}")"
+. "$HERE/lib/agent-dir.sh"
+mth_env WORKDIR MTH_WORKDIR "$PWD"
+WORKDIR="$(readlink -f "$WORKDIR")"
 case "$WORKDIR" in
   /|"$HOME"|/home|/usr|/etc|/var|/tmp|"$HERE"|"$HERE"/*|"$ENGINE_DIR"|"$ENGINE_DIR"/*)
     echo "mth-sandbox: từ chối thư mục làm việc '$WORKDIR' (quá rộng hoặc là chính thư mục công cụ)" >&2; exit 2 ;;
@@ -43,10 +46,10 @@ esac
 [ -d "$WORKDIR" ] || { echo "mth-sandbox: thư mục làm việc không tồn tại: $WORKDIR" >&2; exit 2; }
 
 # Đọc env (key) NGOÀI sandbox trước, vì AGENT có thể được đặt qua env file.
-ENVF="${CODER_ENV_FILE:-$HERE/.env}"
+mth_env ENVF MTH_ENV_FILE "$HERE/.env"
 if [ -f "$ENVF" ]; then set -a; . "$ENVF"; set +a; fi
-. "$HERE/lib/agent-dir.sh"
-AGENT="$(readlink -f "$(mth_agent_dir "$HERE/agent")")"
+mth_agent_dir_get AGENT "$HERE/agent"
+AGENT="$(readlink -f "$AGENT")"
 case "$AGENT/" in "$WORKDIR"/*) echo "mth-sandbox: từ chối: thư mục làm việc '$WORKDIR' chứa agent-dir '$AGENT'" >&2; exit 2 ;; esac
 case "$WORKDIR/" in "$AGENT"/*) echo "mth-sandbox: từ chối: thư mục làm việc nằm trong agent-dir" >&2; exit 2 ;; esac
 
@@ -84,7 +87,7 @@ esac
 [ -f "$HOME/.gitconfig" ] && A+=(--ro-bind "$HOME/.gitconfig" "$HOME/.gitconfig")
 A+=(--bind "$WORKDIR" "$WORKDIR")
 # Git worktree: .git là file "gitdir: X" trỏ ra NGOÀI workdir (thường dưới $HOME, bị tmpfs che) => tự gắn CHỈ-ĐỌC gitdir thật + commondir,
-# để git và sandbox lồng (lib/sandbox-exec.sh) thấy được. Đặt TRƯỚC CODER_EXTRA_RW/RO để người gọi vẫn ghi đè được (vd. cần git commit).
+# để git và sandbox lồng (lib/sandbox-exec.sh) thấy được. Đặt TRƯỚC MTH_EXTRA_RW/RO để người gọi vẫn ghi đè được (vd. cần git commit).
 # .git là symlink: không tự gắn gì; sandbox lồng sẽ từ chối chạy.
 wt_git_paths() {
   local g="$1/.git" gd cd
@@ -104,23 +107,35 @@ while IFS= read -r p; do
   case "$p/" in "$WORKDIR"/*) continue ;; esac   # đã nằm trong workdir (rw) => giữ nguyên
   A+=(--ro-bind "$p" "$p")
 done < <(wt_git_paths "$WORKDIR")
-IFS=: read -r -a _rw <<< "${CODER_EXTRA_RW:-}"; for p in "${_rw[@]:-}"; do [ -n "$p" ] && A+=(--bind "$p" "$p"); done
-IFS=: read -r -a _ro <<< "${CODER_EXTRA_RO:-}"; for p in "${_ro[@]:-}"; do [ -n "$p" ] && A+=(--ro-bind "$p" "$p"); done
+mth_env _rw_val MTH_EXTRA_RW
+IFS=: read -r -a _rw <<< "$_rw_val"; for p in "${_rw[@]:-}"; do [ -n "$p" ] && A+=(--bind "$p" "$p"); done
+mth_env _ro_val MTH_EXTRA_RO
+IFS=: read -r -a _ro <<< "$_ro_val"; for p in "${_ro[@]:-}"; do [ -n "$p" ] && A+=(--ro-bind "$p" "$p"); done
 A+=(--unshare-pid --unshare-ipc --unshare-uts --die-with-parent --new-session --chdir "$WORKDIR")
-[ "${CODER_SANDBOX_NET:-on}" = "off" ] && A+=(--unshare-net)
+mth_env _net MTH_SANDBOX_NET on
+[ "$_net" = "off" ] && A+=(--unshare-net)
 
 # Env trong sandbox: KHÔNG được đặt giá trị lên argv — argv (kể cả của key) đọc được qua /proc/<pid>/cmdline và `ps`.
-# Cả khối env (--clearenv + mọi --setenv, gồm key model và CODER_PASS_ENV) đi qua `--args FD`: bwrap đọc các tham số
+# Cả khối env (--clearenv + mọi --setenv, gồm key model và MTH_PASS_ENV) đi qua `--args FD`: bwrap đọc các tham số
 # NUL-separated từ fd 3 NGAY TẠI vị trí `--args`, nên thứ tự --clearenv trước --setenv vẫn giữ nguyên. Không dùng file tạm.
+# Mỗi biến của mth được đặt CẢ tên mới MTH_* lẫn tên cũ CODER_* (cùng giá trị): tiến trình trong sandbox đọc MTH_* trước
+# nên không cảnh báo, còn script cũ vẫn đọc được CODER_*.
 E=(--clearenv --setenv HOME "$HOME" --setenv PATH "$(dirname "$NODE_BIN")${BUN_DIR:+:$BUN_DIR}:/usr/local/bin:/usr/bin:/bin" \
     --setenv LANG "${LANG:-C.UTF-8}" --setenv TERM "${TERM:-dumb}" \
-    --setenv CODER_AGENT_DIR "$AGENT" --setenv PI_CODING_AGENT_DIR "$AGENT" --setenv CODER_WORKDIR "$WORKDIR" \
-    --setenv CODER_SANDBOXED 1 --setenv CODER_HOME "$HERE")   # bot-permissions: lệnh test/build (bash.sandbox) chỉ tự chạy khi có biến này VÀ PID 1 là bwrap
-for v in COMMANDCODE_API_KEY XAI_API_KEY EXA_API_KEY GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL \
-         CODER_JOB_NAMESPACE CODER_ASK_TIMEOUT_MS CODER_PLAN CODER_ALLOW_STDIN; do
+    --setenv MTH_AGENT_DIR "$AGENT" --setenv CODER_AGENT_DIR "$AGENT" --setenv PI_CODING_AGENT_DIR "$AGENT" \
+    --setenv MTH_WORKDIR "$WORKDIR" --setenv CODER_WORKDIR "$WORKDIR" \
+    --setenv MTH_SANDBOXED 1 --setenv CODER_SANDBOXED 1 \
+    --setenv MTH_HOME "$HERE" --setenv CODER_HOME "$HERE")   # bot-permissions: lệnh test/build (bash.sandbox) chỉ tự chạy khi có biến này VÀ PID 1 là bwrap
+for v in COMMANDCODE_API_KEY XAI_API_KEY EXA_API_KEY GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL; do
   [ -n "${!v:-}" ] && E+=(--setenv "$v" "${!v}")
 done
-IFS=, read -r -a _pe <<< "${CODER_PASS_ENV:-}"; for v in "${_pe[@]:-}"; do [ -n "$v" ] && [ -n "${!v:-}" ] && E+=(--setenv "$v" "${!v}"); done
+# Biến cấu hình mth: đọc cả MTH_* lẫn CODER_* (mth_env cảnh báo một lần), rồi đặt cả hai tên trong sandbox.
+for n in JOB_NAMESPACE ASK_TIMEOUT_MS PLAN ALLOW_STDIN; do
+  mth_env v "MTH_$n"
+  [ -n "$v" ] && E+=(--setenv "MTH_$n" "$v" --setenv "CODER_$n" "$v")
+done
+mth_env _pe_val MTH_PASS_ENV
+IFS=, read -r -a _pe <<< "$_pe_val"; for v in "${_pe[@]:-}"; do [ -n "$v" ] && [ -n "${!v:-}" ] && E+=(--setenv "$v" "${!v}"); done
 exec 3< <(printf '%s\0' "${E[@]}")
 A+=(--args 3)
 

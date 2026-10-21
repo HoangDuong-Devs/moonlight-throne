@@ -48,13 +48,13 @@ function setup(sid = "sess-1") {
 	fs.writeFileSync(path.join(work, ".env"), "SECRET_TOKEN=abcdefgh12345678\n");
 	execFileSync("git", ["init", "-q"], { cwd: work });
 	process.env.PI_CODING_AGENT_DIR = agent;
-	process.env.CODER_WORKDIR = work;
+	process.env.MTH_WORKDIR = work;
 	const handlers = {};
 	mod.default({ on: (n, f) => (handlers[n] = f), appendEntry() {} });
 	const ctx = { cwd: work, hasUI: false, ui: {}, sessionManager: { getSessionId: () => sid } };
 	const call = async (toolName, input) => {
 		process.env.PI_CODING_AGENT_DIR = agent; // extension khác đã chạy có thể đổi env: đặt lại
-		process.env.CODER_WORKDIR = work;
+		process.env.MTH_WORKDIR = work;
 		return handlers.tool_call({ toolName, input }, ctx);
 	};
 	const bash = (command) => call("bash", { command });

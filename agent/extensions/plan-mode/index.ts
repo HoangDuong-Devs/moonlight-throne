@@ -1,7 +1,7 @@
 /**
  * plan-mode — chế độ chỉ đọc kiểu agent `plan` của opencode, dùng được cho bot không có người.
  *
- * Bật bằng:  mth --plan ...   hoặc   CODER_PLAN=1 (true/yes/on)   hoặc lệnh /plan (TUI).
+ * Bật bằng:  mth --plan ...   hoặc   MTH_PLAN=1 (true/yes/on)   hoặc lệnh /plan (TUI).
  * Khi bật:
  *  - chỉ kích hoạt tool đọc (read, grep, find, ls, bash chỉ-đọc, todo, question, tool web đọc nếu có);
  *  - hook tool_call chặn mọi tool khác (write, edit, apply_patch, subagent...) kể cả khi bị bật lại bởi extension khác;
@@ -10,6 +10,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { mthEnv } from "../../../lib/env.mjs";
 import { whyNotReadOnly } from "./utils.ts";
 
 const PLAN_TOOLS = ["read", "grep", "find", "ls", "bash", "todo", "question", "webfetch", "websearch", "web_fetch", "web_search", "codesearch"];
@@ -21,7 +22,7 @@ Allowed: reading and searching the codebase (read, grep, find, ls, read-only bas
 Your job: investigate, think, and produce a concrete implementation plan the user can approve. Finish with a section headed "Plan:" holding numbered steps, naming the files to change and how to verify. List open questions and risks. If something essential is ambiguous, ask via the question tool (or list it under "Open questions" when no one can answer). Do not claim any change was made.`;
 
 function envOn(): boolean {
-	return /^(1|true|yes|on)$/i.test(process.env.CODER_PLAN ?? process.env.CODER_PLAN_MODE ?? "");
+	return /^(1|true|yes|on)$/i.test(mthEnv("MTH_PLAN") ?? mthEnv("MTH_PLAN_MODE") ?? "");
 }
 
 export default function planMode(pi: ExtensionAPI): void {
@@ -29,7 +30,7 @@ export default function planMode(pi: ExtensionAPI): void {
 	let toolsBefore: string[] | undefined;
 
 	pi.registerFlag("plan", {
-		description: "Plan mode: read-only exploration, no file changes (also CODER_PLAN=1)",
+		description: "Plan mode: read-only exploration, no file changes (also MTH_PLAN=1)",
 		type: "boolean",
 		default: false,
 	});

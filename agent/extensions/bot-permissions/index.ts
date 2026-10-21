@@ -16,6 +16,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { mthEnv } from "../../../lib/env.mjs";
 import {
 	audit,
 	detectSandbox,
@@ -340,9 +341,12 @@ function checkSegment(seg: Segment, env: Env, state: { cwd: string }, depth: num
 	return checkRedirects();
 }
 
-/** TypeScript ghim CHÍNH XÁC (install.sh cài vào <CODER_HOME>/vendor; shim bunx trong sandbox lồng dùng bản này, không mạng). */
+/** TypeScript ghim CHÍNH XÁC (install.sh cài vào <MTH_HOME>/vendor; shim bunx trong sandbox lồng dùng bản này, không mạng). */
 export const TS_PINNED = "typescript@5.9.3";
-const vendorTsc = () => (process.env.CODER_HOME ? path.join(process.env.CODER_HOME, "vendor/node_modules/typescript/bin/tsc") : "");
+const vendorTsc = () => {
+	const home = mthEnv("MTH_HOME");
+	return home ? path.join(home, "vendor/node_modules/typescript/bin/tsc") : "";
+};
 
 /**
  * Luật cứng cho bunx (không tắt được bằng permissions.json): chỉ 2 dạng
@@ -386,9 +390,9 @@ function wrapNested(input: Record<string, unknown>, env: Env): string | null {
 	if (!env.sandboxed) return null;
 	const command = String(input.command ?? "");
 	if (!matchesSandboxList(command, env)) return null;
-	const home = process.env.CODER_HOME;
+	const home = mthEnv("MTH_HOME");
 	const wrapper = home ? path.join(home, "lib/sandbox-exec.sh") : "";
-	if (!wrapper || !fs.existsSync(wrapper)) return "Lệnh test/build phải chạy trong sandbox lồng nhưng không thấy lib/sandbox-exec.sh (CODER_HOME); bị chặn.";
+	if (!wrapper || !fs.existsSync(wrapper)) return "Lệnh test/build phải chạy trong sandbox lồng nhưng không thấy lib/sandbox-exec.sh (MTH_HOME); bị chặn.";
 	input.command = `${shq(wrapper)} -- ${shq(command)}`;
 	return null;
 }
@@ -608,7 +612,7 @@ export default function botPermissions(pi: ExtensionAPI): void {
 	const agentReal = realish(agentDir);
 
 	function rootOf(cwd: string): string {
-		return realish(path.resolve(process.env.CODER_WORKDIR || cwd));
+		return realish(path.resolve(mthEnv("MTH_WORKDIR") || cwd));
 	}
 
 	const denied = new Set<string>(); // key đã bị bot từ chối trong tiến trình này (chống vòng lặp xin lại)
@@ -666,7 +670,7 @@ export default function botPermissions(pi: ExtensionAPI): void {
 
 		// 3) có kênh hỏi (RPC / TUI): hỏi bot cha ngay trong phiên
 		if (ctx.hasUI) {
-			const envT = Number(process.env.CODER_ASK_TIMEOUT_MS); // bot cha có thể ép hạn chót khác cho tiến trình này
+			const envT = Number(mthEnv("MTH_ASK_TIMEOUT_MS")); // bot cha có thể ép hạn chót khác cho tiến trình này
 			const timeoutMs = Number.isFinite(envT) && envT >= 1000 && envT <= 3_600_000 ? envT : env.policy.askConfig.timeoutMs;
 			const payload = {
 				type: "permission_request", id, session: sessionId, tool: toolName, kind,

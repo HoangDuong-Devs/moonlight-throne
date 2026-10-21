@@ -5,6 +5,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { mthEnv } from "../../../lib/env.mjs";
 import { globToRegExp } from "./shell.ts";
 
 export interface Rules {
@@ -146,12 +147,12 @@ export function loadPolicy(agentDir: string): Loaded {
 // ---------- phát hiện sandbox ----------
 
 /**
- * Đang chạy trong mth-sandbox? Cần CẢ HAI: CODER_SANDBOXED=1 (mth-sandbox đặt bằng --setenv sau --clearenv)
- * VÀ PID 1 của namespace là bwrap (mth-sandbox luôn --unshare-pid). Model không đặt được env của tiến trình extension;
- * chỉ đặt biến ở host mà không có namespace bwrap thì vẫn bị coi là NGOÀI sandbox (fail-closed).
+ * Đang chạy trong mth-sandbox? Cần CẢ HAI: MTH_SANDBOXED=1 (hoặc tên cũ CODER_SANDBOXED=1; mth-sandbox đặt bằng
+ * --setenv sau --clearenv) VÀ PID 1 của namespace là bwrap (mth-sandbox luôn --unshare-pid). Model không đặt được env
+ * của tiến trình extension; chỉ đặt biến ở host mà không có namespace bwrap thì vẫn bị coi là NGOÀI sandbox (fail-closed).
  */
 export function detectSandbox(env: NodeJS.ProcessEnv = process.env, readComm: () => string = () => fs.readFileSync("/proc/1/comm", "utf8")): boolean {
-	if (env.CODER_SANDBOXED !== "1") return false;
+	if (mthEnv("MTH_SANDBOXED", env) !== "1") return false;
 	try {
 		return readComm().trim() === "bwrap";
 	} catch {

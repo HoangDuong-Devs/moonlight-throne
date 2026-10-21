@@ -10,17 +10,18 @@
  * - Giữ `keep` snapshot gần nhất (mặc định 50), giới hạn dung lượng maxRepoMB. Cấu hình: <agent-dir>/snapshot.json.
  * - Không đăng ký tool cho model. Cho người dùng TUI: /snapshots, /revert <id> [--dry-run]. Bot dùng lib/snapshot-cli.mjs.
  * - Logic dùng chung nằm ở tools/moonlight-throne/lib/snapshot-cli.mjs (một nguồn duy nhất).
- * Lỗi chụp không bao giờ làm hỏng lượt chạy (chỉ ghi stderr khi CODER_SNAPSHOT_DEBUG=1).
+ * Lỗi chụp không bao giờ làm hỏng lượt chạy (chỉ ghi stderr khi MTH_SNAPSHOT_DEBUG=1).
  */
 import path from "node:path";
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 // @ts-ignore: module .mjs thuần, không có kiểu
 import { listSnapshots, maybePruneRepos, openContext, revertTo, takeSnapshot } from "../../../lib/snapshot-cli.mjs";
+import { mthEnv } from "../../../lib/env.mjs";
 
 export default function snapshotExtension(pi: ExtensionAPI): void {
 	let chain: Promise<unknown> = Promise.resolve();
 	const debug = (m: string) => {
-		if (process.env.CODER_SNAPSHOT_DEBUG || process.env.PI_SNAPSHOT_DEBUG) console.error(`[snapshot] ${m}`);
+		if (mthEnv("MTH_SNAPSHOT_DEBUG") || process.env.PI_SNAPSHOT_DEBUG) console.error(`[snapshot] ${m}`);
 	};
 
 	const sessionOf = (ctx: ExtensionContext): string | undefined => {

@@ -4,7 +4,11 @@
 #   bunx tsc ...                                -> node_modules/typescript cục bộ (nếu có), không thì vendor tsc
 # Gói khác: từ chối (bot-permissions đã chặn cứng; đây là lớp phòng thủ thứ hai).
 set -euo pipefail
-VENDOR_TSC="${CODER_HOME:?}/vendor/node_modules/typescript/bin/tsc"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # thư mục lib/ (chứa agent-dir.sh)
+. "$HERE/agent-dir.sh"
+mth_env _MTH_HOME MTH_HOME
+[ -n "$_MTH_HOME" ] || { echo "bunx(shim): thiếu MTH_HOME (sandbox lồng chưa đặt)" >&2; exit 127; }
+VENDOR_TSC="$_MTH_HOME/vendor/node_modules/typescript/bin/tsc"
 if [ "${1:-}" = "-p" ] || [ "${1:-}" = "--package" ]; then
   [ "${2:-}" = "typescript@5.9.3" ] && [ "${3:-}" = "tsc" ] || { echo "bunx(shim): chỉ cho phép -p typescript@5.9.3 tsc" >&2; exit 126; }
   shift 3; TSC="$VENDOR_TSC"

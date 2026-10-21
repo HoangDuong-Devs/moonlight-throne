@@ -10,16 +10,18 @@
 #   ./mth jobs list|status|wait|result|cancel|prune [id] --json   (subagent chạy nền)
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENVF="${CODER_ENV_FILE:-$HERE/.env}"   # CODER_ENV_FILE: cấu hình riêng từng bot (xem `mth provision`)
-if [ -f "$ENVF" ]; then set -a; . "$ENVF"; set +a; fi
 . "$HERE/lib/agent-dir.sh"
-export CODER_AGENT_DIR="$(mth_agent_dir "$HERE/agent")"
-export PI_CODING_AGENT_DIR="$CODER_AGENT_DIR"   # nội bộ: thư viện lõi đọc tên này
+mth_env ENVF MTH_ENV_FILE "$HERE/.env"   # MTH_ENV_FILE: cấu hình riêng từng bot (xem `mth provision`)
+if [ -f "$ENVF" ]; then set -a; . "$ENVF"; set +a; fi
+mth_agent_dir_get AGENT_DIR "$HERE/agent"
+export MTH_AGENT_DIR="$AGENT_DIR" CODER_AGENT_DIR="$AGENT_DIR"   # CODER_AGENT_DIR: tên cũ, giữ cho tiến trình con cũ
+export PI_CODING_AGENT_DIR="$AGENT_DIR"   # nội bộ: thư viện lõi đọc tên này
 ENGINE_CLI="$HERE/../pi/packages/coding-agent/dist/bundle/cli.js"
 [ -f "$ENGINE_CLI" ] || { echo "mth: chưa build lõi agent ($ENGINE_CLI); chạy ./install.sh" >&2; exit 127; }
 case "${1:-}" in
   models) shift; set -- --list-models "$@" ;;
-  run) shift; node "$HERE/lib/snapshot-cli.mjs" auto-prune --dir "${CODER_WORKDIR:-$PWD}" >/dev/null 2>&1 || true
+  run) shift; mth_env WORKDIR MTH_WORKDIR "$PWD"
+       node "$HERE/lib/snapshot-cli.mjs" auto-prune --dir "$WORKDIR" >/dev/null 2>&1 || true
        exec node "$HERE/lib/run-cli.mjs" "$@" ;;
   snapshot-prune) shift; exec node "$HERE/lib/snapshot-cli.mjs" prune "$@" ;;
   provision) shift; exec node "$HERE/lib/provision.mjs" "$@" ;;
@@ -30,14 +32,15 @@ case "${1:-}" in
   pending|approve|deny|grants|revoke) exec node "$HERE/lib/permissions-cli.mjs" "$@" ;;
 esac
 # Lõi agent ở chế độ -p/json ghép stdin vào lời nhắn và chờ EOF: nếu bot giữ stdin là pipe mở thì treo vô hạn.
-# Vì vậy cắt stdin (</dev/null) trừ khi: đang là TTY, chế độ rpc (cần stdin), hoặc đặt CODER_ALLOW_STDIN=1
-# (dùng khi chủ ý đưa nội dung qua pipe: `cat f | CODER_ALLOW_STDIN=1 mth -p "tóm tắt"`).
+# Vì vậy cắt stdin (</dev/null) trừ khi: đang là TTY, chế độ rpc (cần stdin), hoặc đặt MTH_ALLOW_STDIN=1
+# (dùng khi chủ ý đưa nội dung qua pipe: `cat f | MTH_ALLOW_STDIN=1 mth -p "tóm tắt"`).
 rpc=0; prev=""
 for a in "$@"; do
   if [ "$a" = "--mode=rpc" ] || { [ "$prev" = "--mode" ] && [ "$a" = "rpc" ]; }; then rpc=1; fi
   prev="$a"
 done
-if [ "${CODER_ALLOW_STDIN:-0}" != "1" ] && [ "$rpc" = "0" ] && [ ! -t 0 ]; then
+mth_env ALLOW_STDIN MTH_ALLOW_STDIN 0
+if [ "$ALLOW_STDIN" != "1" ] && [ "$rpc" = "0" ] && [ ! -t 0 ]; then
   exec node "$ENGINE_CLI" "$@" </dev/null
 fi
 exec node "$ENGINE_CLI" "$@"

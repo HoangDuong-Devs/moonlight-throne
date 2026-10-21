@@ -51,7 +51,7 @@ function victim({ detached = true, extraArgs = [] } = {}) {
 const meta = (o) => ({ sessionID: o.sessionID, agent: "explore", description: "d", cwd: root, status: "running", startedAt: Date.now() - 60_000, ...o });
 const put = (agent, m) => fs.writeFileSync(path.join(core.dirOf(agent), `${m.sessionID}.meta.json`), JSON.stringify(m));
 const cli = (agent, args, env = {}) => {
-	const r = spawnSync(process.execPath, [CLI, ...args, "--json"], { encoding: "utf8", env: { ...process.env, CODER_AGENT_DIR: agent, CODER_JOB_NAMESPACE: "", ...env } });
+	const r = spawnSync(process.execPath, [CLI, ...args, "--json"], { encoding: "utf8", env: { ...process.env, MTH_AGENT_DIR: agent, MTH_JOB_NAMESPACE: "", ...env } });
 	return { code: r.status, out: r.stdout, err: r.stderr };
 };
 
@@ -183,7 +183,7 @@ describe("J2: meta giả không khiến kill tiến trình tùy ý", () => {
 		const agent = newAgent();
 		const cur = await startReal(agent, "ns_job", "ns:B");
 		// namespace khác: bị từ chối, job vẫn chạy
-		let r = cli(agent, ["cancel", "ns_job"], { CODER_JOB_NAMESPACE: "A" });
+		let r = cli(agent, ["cancel", "ns_job"], { MTH_JOB_NAMESPACE: "A" });
 		assert.equal(r.code, 1, r.out + r.err);
 		assert.match(r.out, /forbidden/);
 		assert.equal(core.getJob(agent, "ns_job").status, "running");
@@ -194,7 +194,7 @@ describe("J2: meta giả không khiến kill tiến trình tùy ý", () => {
 		assert.equal(r.code, 1);
 		assert.equal(core.getJob(agent, "ns_job").status, "running");
 		// đúng namespace: hủy được
-		r = cli(agent, ["cancel", "ns_job"], { CODER_JOB_NAMESPACE: "B" });
+		r = cli(agent, ["cancel", "ns_job"], { MTH_JOB_NAMESPACE: "B" });
 		assert.equal(r.code, 0, r.out + r.err);
 		assert.equal(core.getJob(agent, "ns_job").status, "cancelled");
 		await sleep(200);
@@ -204,7 +204,7 @@ describe("J2: meta giả không khiến kill tiến trình tùy ý", () => {
 	test("CLI cancel --all (vận hành viên) vẫn hủy được job của namespace khác", async () => {
 		const agent = newAgent();
 		await startReal(agent, "ns_job2", "ns:B");
-		const r = cli(agent, ["cancel", "ns_job2", "--all"], { CODER_JOB_NAMESPACE: "A" });
+		const r = cli(agent, ["cancel", "ns_job2", "--all"], { MTH_JOB_NAMESPACE: "A" });
 		assert.equal(r.code, 0, r.out + r.err);
 		assert.equal(core.getJob(agent, "ns_job2").status, "cancelled");
 	});

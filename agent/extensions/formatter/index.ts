@@ -1,6 +1,6 @@
 /**
  * formatter: sau khi write/edit/apply_patch ghi file, chạy formatter theo đuôi file (cổng từ opencode formatter/builtins.ts).
- * Cấu hình: <CODER_AGENT_DIR>/formatter.json
+ * Cấu hình: <MTH_AGENT_DIR>/formatter.json
  *   {
  *     "enabled": true,                 // false = tắt hẳn
  *     "timeoutMs": 10000,

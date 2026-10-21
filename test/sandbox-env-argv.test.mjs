@@ -1,4 +1,4 @@
-// Test: giá trị env (key model, CODER_PASS_ENV) KHÔNG được xuất hiện trên argv => không lộ qua `ps` / /proc/<pid>/cmdline.
+// Test: giá trị env (key model, MTH_PASS_ENV) KHÔNG được xuất hiện trên argv => không lộ qua `ps` / /proc/<pid>/cmdline.
 // Chạy: node --test --experimental-strip-types test/sandbox-env-argv.test.mjs
 // Không in giá trị giả trong bất kỳ thông báo assert nào.
 import test from "node:test";
@@ -13,7 +13,7 @@ const CODER = path.resolve(new URL("..", import.meta.url).pathname);
 const HAS_BWRAP = spawnSync("bwrap", ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--unshare-pid", "true"]).status === 0;
 // bwrap chỉ nhận option từ --args; lệnh phải nằm trên argv thật.
 const HAS_ARGS = HAS_BWRAP && spawnSync("bash", ["-c", "exec 3< <(printf '%s\\0' --clearenv --setenv BWRAP_ARGS_PROBE 1); bwrap --ro-bind / / --dev /dev --proc /proc --args 3 /bin/sh -c 'test -n \"$BWRAP_ARGS_PROBE\"'"], { stdio: "ignore" }).status === 0;
-const SKIP = process.env.CODER_SANDBOXED === "1" ? "đang ở trong sandbox (CODER_SANDBOXED=1)" : !HAS_BWRAP ? "không có bwrap" : !HAS_ARGS ? "bwrap không hỗ trợ --args" : false;
+const SKIP = process.env.MTH_SANDBOXED === "1" || process.env.CODER_SANDBOXED === "1" ? "đang ở trong sandbox (MTH_SANDBOXED=1)" : !HAS_BWRAP ? "không có bwrap" : !HAS_ARGS ? "bwrap không hỗ trợ --args" : false;
 
 const cleanups = [];
 test.after(() => {
@@ -56,9 +56,9 @@ function waitExit(p, ms) {
 	});
 }
 
-test("S15: mth-sandbox KHÔNG đặt giá trị env (key + CODER_PASS_ENV) lên argv; env vẫn được truyền vào trong", { skip: SKIP }, async () => {
+test("S15: mth-sandbox KHÔNG đặt giá trị env (key + MTH_PASS_ENV) lên argv; env vẫn được truyền vào trong", { skip: SKIP }, async () => {
 	const key = `fake-LEAKCHECK-${crypto.randomBytes(12).toString("hex")}`;
-	const passName = "CODER_FAKE_PASS_TOKEN";
+	const passName = "MTH_FAKE_PASS_TOKEN";
 	const passVal = `fake-LEAKCHECK-PASS-${crypto.randomBytes(12).toString("hex")}`;
 	const values = [key, passVal];
 	const redact = (s) => values.reduce((t, v) => t.split(v).join("[redacted]"), String(s));
@@ -98,9 +98,9 @@ test("S15: mth-sandbox KHÔNG đặt giá trị env (key + CODER_PASS_ENV) lên 
 		"sleep 2",
 	].join("; ");
 	const env = {
-		PATH: process.env.PATH, HOME: process.env.HOME, CODER_AGENT_DIR: agent, CODER_WORKDIR: work,
-		CODER_ENV_FILE: path.join(root, "none.env"), CODER_SANDBOX_NET: "off",
-		COMMANDCODE_API_KEY: key, [passName]: passVal, CODER_PASS_ENV: passName, HOST_ONLY_CANARY: "host-only-value",
+		PATH: process.env.PATH, HOME: process.env.HOME, MTH_AGENT_DIR: agent, MTH_WORKDIR: work,
+		MTH_ENV_FILE: path.join(root, "none.env"), MTH_SANDBOX_NET: "off",
+		COMMANDCODE_API_KEY: key, [passName]: passVal, MTH_PASS_ENV: passName, HOST_ONLY_CANARY: "host-only-value",
 	};
 	const child = spawn(path.join(here, "mth-sandbox"), ["exec", "--", "sh", "-c", script], { env, stdio: ["ignore", "pipe", "pipe"] });
 	let out = "";
@@ -117,7 +117,7 @@ test("S15: mth-sandbox KHÔNG đặt giá trị env (key + CODER_PASS_ENV) lên 
 		const r = scan(values);
 		assert.equal(r.hits.length, 0, `giá trị env lọt vào /proc/<pid>/cmdline — ${describeHits(r)}`);
 		assert.ok(!r.psHits[0], "giá trị key lọt vào output của `ps -eo args`");
-		assert.ok(!r.psHits[1], "giá trị CODER_PASS_ENV lọt vào output của `ps -eo args`");
+		assert.ok(!r.psHits[1], "giá trị MTH_PASS_ENV lọt vào output của `ps -eo args`");
 		assert.ok(r.psOk, "không chạy được `ps -eo args` để kiểm tra");
 		const code = await waitExit(exited, 20000);
 		assert.equal(code, 0, redact(out));

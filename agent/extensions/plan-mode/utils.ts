@@ -8,6 +8,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { mthEnv } from "../../../lib/env.mjs";
 import { parseShell, vetCommand, type Fail, type VetCtx } from "./shell.ts";
 
 /** File/thư mục chứa secret: plan-mode tự chặn thêm một lớp (bot-permissions kiểm tra đầy đủ hơn khi cùng được nạp). */
@@ -19,7 +20,7 @@ const secretFail = (p: string): Fail | null => (SECRET_PART.test(p) ? { rule: "p
 function jailFail(p: string): Fail | null {
 	const s = secretFail(p);
 	if (s) return s;
-	const root = path.resolve(process.env.CODER_WORKDIR || process.cwd());
+	const root = path.resolve(mthEnv("MTH_WORKDIR") || process.cwd());
 	const abs = path.resolve(root, p.replace(/^@/, "").replace(/^~(?=\/|$)/, os.homedir()));
 	let real = abs;
 	try {
@@ -38,7 +39,7 @@ function jailFail(p: string): Fail | null {
 
 /** Duyệt đệ quy không được bắt đầu từ gốc / hoặc tổ tiên của thư mục home. */
 function treeFail(p: string): Fail | null {
-	let abs = path.resolve(process.env.CODER_WORKDIR || process.cwd(), p === "~" || p.startsWith("~/") ? os.homedir() + p.slice(1) : p);
+	let abs = path.resolve(mthEnv("MTH_WORKDIR") || process.cwd(), p === "~" || p.startsWith("~/") ? os.homedir() + p.slice(1) : p);
 	try {
 		abs = fs.realpathSync(abs);
 	} catch {

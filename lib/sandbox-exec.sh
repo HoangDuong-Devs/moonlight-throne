@@ -11,9 +11,11 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 [ "$#" -eq 1 ] || { echo "sandbox-exec: cần đúng 1 chuỗi lệnh" >&2; exit 2; }
 CMD="$1"
 command -v bwrap >/dev/null || { echo "sandbox-exec: không có bwrap" >&2; exit 127; }
-WORKDIR="$(readlink -f "${CODER_WORKDIR:-$PWD}")"
 . "$HERE/lib/agent-dir.sh"
-AGENT="$(readlink -f "$(mth_agent_dir "$HERE/agent")")"
+mth_env WORKDIR MTH_WORKDIR "$PWD"
+WORKDIR="$(readlink -f "$WORKDIR")"
+mth_agent_dir_get AGENT "$HERE/agent"
+AGENT="$(readlink -f "$AGENT")"
 NODE_BIN="$(command -v node)" || { echo "sandbox-exec: không thấy node" >&2; exit 127; }
 NODE_DIR="$(dirname "$(readlink -f "$NODE_BIN")")"
 BUN_DIR=""; B="$(command -v bun 2>/dev/null || true)"; [ -n "$B" ] && BUN_DIR="$(dirname "$(readlink -f "$B")")"
@@ -50,7 +52,7 @@ ro_git() {
     [ -n "$gd" ] || { echo "sandbox-exec: từ chối chạy: $g không có dòng 'gitdir: '" >&2; exit 4; }
     case "$gd" in /*) ;; *) gd="$1/$gd" ;; esac
     gd="$(readlink -f "$gd" 2>/dev/null || true)"
-    [ -n "$gd" ] && [ -d "$gd" ] || { echo "sandbox-exec: từ chối chạy: gitdir của worktree ($(sed -n 's/^gitdir: //p' "$g" | head -n1)) không thấy trong sandbox; lớp ngoài chưa gắn nó (chạy qua mth-sandbox bản mới hoặc CODER_EXTRA_RO)" >&2; exit 4; }
+    [ -n "$gd" ] && [ -d "$gd" ] || { echo "sandbox-exec: từ chối chạy: gitdir của worktree ($(sed -n 's/^gitdir: //p' "$g" | head -n1)) không thấy trong sandbox; lớp ngoài chưa gắn nó (chạy qua mth-sandbox bản mới hoặc MTH_EXTRA_RO)" >&2; exit 4; }
     A+=(--ro-bind "$gd" "$gd")
     if [ -f "$gd/commondir" ]; then
       cd="$(head -n1 "$gd/commondir")"; case "$cd" in /*) ;; *) cd="$gd/$cd" ;; esac
@@ -64,7 +66,10 @@ ro_git "$WORKDIR"
 [ "$CWD" != "$WORKDIR" ] && ro_git "$CWD"
 A+=(--unshare-net --unshare-pid --unshare-ipc --unshare-uts --die-with-parent --new-session --chdir "$CWD")
 A+=(--clearenv --setenv HOME "$HOME" --setenv PATH "$HERE/lib/nested-bin:$NODE_DIR${BUN_DIR:+:$BUN_DIR}:/usr/local/bin:/usr/bin:/bin"
-    --setenv CI 1 --setenv CODER_NESTED 1 --setenv CODER_HOME "$HERE" --setenv CODER_WORKDIR "$WORKDIR")
+    --setenv CI 1 \
+    --setenv MTH_NESTED 1 --setenv CODER_NESTED 1 \
+    --setenv MTH_HOME "$HERE" --setenv CODER_HOME "$HERE" \
+    --setenv MTH_WORKDIR "$WORKDIR" --setenv CODER_WORKDIR "$WORKDIR")
 # env ALLOWLIST: chỉ biến vô hại; không bao giờ truyền biến có tên giống secret
 for v in LANG LC_ALL TERM TZ NODE_ENV NO_COLOR FORCE_COLOR; do
   [ -n "${!v:-}" ] && A+=(--setenv "$v" "${!v}")
