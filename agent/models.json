@@ -6,8 +6,8 @@
       "api": "openai-completions",
       "apiKey": "$COMMANDCODE_API_KEY",
       "models": [
-        { "id": "deepseek/deepseek-v4.1-flash-fast", "name": "DeepSeek V4.1 Flash Fast", "contextWindow": 1000000, "maxTokens": 65536 },
-        { "id": "deepseek/deepseek-v4.1-flash", "name": "DeepSeek V4.1 Flash", "contextWindow": 1000000, "maxTokens": 65536 },
+        { "id": "deepseek/deepseek-v4.1-flash-fast", "name": "DeepSeek V4.1 Flash Fast", "contextWindow": 1000000, "maxTokens": 65536, "reasoning": true, "thinkingLevelMap": { "minimal": "max", "low": "max", "medium": "max", "high": "max", "xhigh": "max", "max": "max" } },
+        { "id": "deepseek/deepseek-v4.1-flash", "name": "DeepSeek V4.1 Flash", "contextWindow": 1000000, "maxTokens": 65536, "reasoning": true, "thinkingLevelMap": { "minimal": "max", "low": "max", "medium": "max", "high": "max", "xhigh": "max", "max": "max" } },
         { "id": "stealth/space-bunny-alpha", "name": "Space Bunny Alpha" },
         { "id": "poolside/laguna-s-2.1-free", "name": "Laguna S 2.1 Free", "contextWindow": 256000, "maxTokens": 65536 },
         { "id": "Qwen/Qwen3.8-Omni-Flash", "name": "Qwen3.8 Omni Flash", "contextWindow": 1000000, "maxTokens": 65536 }
