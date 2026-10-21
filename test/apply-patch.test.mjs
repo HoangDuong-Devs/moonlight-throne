@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-// Stub gói Pi + typebox (không có node_modules trong coder)
+// Stub gói Pi + typebox (không có node_modules trong repo)
 register(
 	"data:text/javascript," +
 		encodeURIComponent(`

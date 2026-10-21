@@ -239,7 +239,7 @@ export async function webFetch(
 		let res = await request(input.url, format, UA, cfg, signal)
 		if (res.status === 403 && res.headers.get("cf-mitigated") === "challenge") {
 			await res.body?.cancel().catch(() => {})
-			res = await request(input.url, format, "coder", cfg, signal)
+			res = await request(input.url, format, "mth", cfg, signal)
 		}
 		if (!res.ok) {
 			await res.body?.cancel().catch(() => {})

@@ -8,7 +8,7 @@ import { chmod, lstat, mkdir, open, readFile, realpath, rename, rm } from "node:
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { Type } from "typebox";
 
-// ---------- mô tả tool (patch.txt của opencode, giữ nguyên + vài lưu ý cho coder) ----------
+// ---------- mô tả tool (patch.txt của opencode, giữ nguyên + vài lưu ý cho mth) ----------
 const DESCRIPTION = `Use the \`apply_patch\` tool to edit files. Your patch language is a stripped‑down, file‑oriented diff format designed to be easy to parse and safe to apply. You can think of it as a high‑level envelope:
 
 *** Begin Patch

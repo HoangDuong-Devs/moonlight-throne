@@ -1,43 +1,5 @@
 #!/usr/bin/env bash
-# Launcher cho coder: tự nạp credential + cấu hình cô lập, gọi model chỉ bằng tên.
-#   ./coder -p --model grok-4.5 "việc cần làm"
-#   ./coder --mode json --model deepseek-v4.1-flash-fast --session-id bot-1 --session-dir ./sessions "..."
-#   ./coder models        # liệt kê model dùng được
-#   ./coder snapshots --json | ./coder revert <snap|first|latest> [--dry-run] --json
-#   ./coder pending|approve <id> [--always]|deny <id>|grants|revoke <id> [--session ID] --json
-#   ./coder run [--model M] [--session ID] [--dir D] [--timeout SEC] [--sandbox] "prompt"   -> MỘT đối tượng JSON (khuyên bot dùng)
-#   ./coder snapshot-prune [--days N] [--max-mb M] [--dry-run] --json ;  ./coder provision create|list|show|remove <bot>
-#   ./coder jobs list|status|wait|result|cancel|prune [id] --json   (subagent chạy nền)
-set -euo pipefail
+# Shim lỗi thời: giữ tên cũ `coder`, chuyển sang `mth`.
+echo "coder: cảnh báo: lệnh 'coder' đã lỗi thời, hãy dùng 'mth'" >&2
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENVF="${CODER_ENV_FILE:-$HERE/.env}"   # CODER_ENV_FILE: cấu hình riêng từng bot (xem `coder provision`)
-if [ -f "$ENVF" ]; then set -a; . "$ENVF"; set +a; fi
-. "$HERE/lib/agent-dir.sh"
-export CODER_AGENT_DIR="$(coder_agent_dir "$HERE/agent")"
-export PI_CODING_AGENT_DIR="$CODER_AGENT_DIR"   # nội bộ: thư viện lõi đọc tên này
-ENGINE_CLI="$HERE/../pi/packages/coding-agent/dist/bundle/cli.js"
-[ -f "$ENGINE_CLI" ] || { echo "coder: chưa build lõi agent ($ENGINE_CLI); chạy ./install.sh" >&2; exit 127; }
-case "${1:-}" in
-  models) shift; set -- --list-models "$@" ;;
-  run) shift; node "$HERE/lib/snapshot-cli.mjs" auto-prune --dir "${CODER_WORKDIR:-$PWD}" >/dev/null 2>&1 || true
-       exec node "$HERE/lib/run-cli.mjs" "$@" ;;
-  snapshot-prune) shift; exec node "$HERE/lib/snapshot-cli.mjs" prune "$@" ;;
-  provision) shift; exec node "$HERE/lib/provision.mjs" "$@" ;;
-  snapshots) shift; exec node "$HERE/lib/snapshot-cli.mjs" list "$@" ;;
-  snapshot-diff) shift; exec node "$HERE/lib/snapshot-cli.mjs" diff "$@" ;;
-  revert) shift; exec node "$HERE/lib/snapshot-cli.mjs" revert "$@" ;;
-  jobs) shift; exec node "$HERE/lib/subagent-cli.mjs" "$@" ;;
-  pending|approve|deny|grants|revoke) exec node "$HERE/lib/permissions-cli.mjs" "$@" ;;
-esac
-# Lõi agent ở chế độ -p/json ghép stdin vào lời nhắn và chờ EOF: nếu bot giữ stdin là pipe mở thì treo vô hạn.
-# Vì vậy cắt stdin (</dev/null) trừ khi: đang là TTY, chế độ rpc (cần stdin), hoặc đặt CODER_ALLOW_STDIN=1
-# (dùng khi chủ ý đưa nội dung qua pipe: `cat f | CODER_ALLOW_STDIN=1 coder -p "tóm tắt"`).
-rpc=0; prev=""
-for a in "$@"; do
-  if [ "$a" = "--mode=rpc" ] || { [ "$prev" = "--mode" ] && [ "$a" = "rpc" ]; }; then rpc=1; fi
-  prev="$a"
-done
-if [ "${CODER_ALLOW_STDIN:-0}" != "1" ] && [ "$rpc" = "0" ] && [ ! -t 0 ]; then
-  exec node "$ENGINE_CLI" "$@" </dev/null
-fi
-exec node "$ENGINE_CLI" "$@"
+exec "$HERE/mth" "$@"

@@ -56,7 +56,7 @@ function waitExit(p, ms) {
 	});
 }
 
-test("S15: coder-sandbox KHÔNG đặt giá trị env (key + CODER_PASS_ENV) lên argv; env vẫn được truyền vào trong", { skip: SKIP }, async () => {
+test("S15: mth-sandbox KHÔNG đặt giá trị env (key + CODER_PASS_ENV) lên argv; env vẫn được truyền vào trong", { skip: SKIP }, async () => {
 	const key = `fake-LEAKCHECK-${crypto.randomBytes(12).toString("hex")}`;
 	const passName = "CODER_FAKE_PASS_TOKEN";
 	const passVal = `fake-LEAKCHECK-PASS-${crypto.randomBytes(12).toString("hex")}`;
@@ -65,12 +65,12 @@ test("S15: coder-sandbox KHÔNG đặt giá trị env (key + CODER_PASS_ENV) lê
 
 	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "sbx-argv-")));
 	cleanups.push(root);
-	const here = path.join(root, "tools/coder");
+	const here = path.join(root, "tools/mth");
 	fs.mkdirSync(path.join(root, "tools/pi"), { recursive: true });
 	fs.mkdirSync(path.join(here, "lib"), { recursive: true });
 	fs.copyFileSync(path.join(CODER, "lib/agent-dir.sh"), path.join(here, "lib/agent-dir.sh"));
-	fs.copyFileSync(path.join(CODER, "coder-sandbox"), path.join(here, "coder-sandbox"));
-	fs.chmodSync(path.join(here, "coder-sandbox"), 0o755);
+	fs.copyFileSync(path.join(CODER, "mth-sandbox"), path.join(here, "mth-sandbox"));
+	fs.chmodSync(path.join(here, "mth-sandbox"), 0o755);
 	const agent = path.join(root, "agent");
 	fs.mkdirSync(agent);
 	const work = path.join(root, "work");
@@ -102,7 +102,7 @@ test("S15: coder-sandbox KHÔNG đặt giá trị env (key + CODER_PASS_ENV) lê
 		CODER_ENV_FILE: path.join(root, "none.env"), CODER_SANDBOX_NET: "off",
 		COMMANDCODE_API_KEY: key, [passName]: passVal, CODER_PASS_ENV: passName, HOST_ONLY_CANARY: "host-only-value",
 	};
-	const child = spawn(path.join(here, "coder-sandbox"), ["exec", "--", "sh", "-c", script], { env, stdio: ["ignore", "pipe", "pipe"] });
+	const child = spawn(path.join(here, "mth-sandbox"), ["exec", "--", "sh", "-c", script], { env, stdio: ["ignore", "pipe", "pipe"] });
 	let out = "";
 	child.stdout.on("data", (d) => { out += d; });
 	child.stderr.on("data", (d) => { out += d; });

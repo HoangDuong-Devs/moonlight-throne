@@ -1,6 +1,6 @@
-# Giao thức hỏi quyền (ask) của coder
+# Giao thức hỏi quyền (ask) của mth
 
-Dành cho người viết BOT điều phối gọi `coder`. Extension `bot-permissions` có 3 kết quả cho mỗi lần gọi tool: **cho chạy**, **chặn cứng**, hoặc **cần duyệt (ask)**. Tài liệu này mô tả ask.
+Dành cho người viết BOT điều phối gọi `mth`. Extension `bot-permissions` có 3 kết quả cho mỗi lần gọi tool: **cho chạy**, **chặn cứng**, hoặc **cần duyệt (ask)**. Tài liệu này mô tả ask.
 
 ## 1. Thứ tự quyết định
 
@@ -31,7 +31,7 @@ Mẫu ask khởi điểm: `git add/commit/stash/switch/checkout/merge/rebase/che
   - Model không ghi được kho (ghi vào agent-dir bị chặn cứng; lệnh/redirect nhắc tới `permissions-cli`/`grants`/`grants-used`/`permission-requests` bị chặn cứng). Mã chạy trong sandbox (vd `python3 -m pytest`) vẫn có thể ghi `grants-used/` và `permission-requests/` — hai nơi này được thiết kế để làm vậy cũng không cấp thêm quyền.
 - Audit (`agent/audit.log`, đã che secret) ghi các `event`: `ask`, `approve` (via rpc|cli), `deny`, `grant_used`, `ask_denied_repeat`, `revoke`. **`audit.log` do sandbox ghi được nên KHÔNG phải nguồn tin cậy** (chèn/xóa dòng giả được); nhật ký tin cậy là bản phía host. Extension ghi bằng `O_NOFOLLOW` và không bao giờ sập khi ghi lỗi.
 
-## 3. Chế độ RPC (`coder --mode rpc`)
+## 3. Chế độ RPC (`mth --mode rpc`)
 
 Tool cần duyệt => extension gửi `extension_ui_request` (method `select`) và chờ. `title` là MỘT chuỗi JSON (parse nó):
 
@@ -79,7 +79,7 @@ Blocked by bot policy [needs_permission]: Hành động này cần bot điều p
 
 Cùng thông tin có trong luồng JSON dưới dạng event `entry_appended` (entry `customType: "permission_request"`) và trong file `permission-requests/<id>.json` (thêm `status`, `createdAt`). Bot nên dùng `--session-id` cố định để gọi lại đúng session.
 
-CLI (`node lib/permissions-cli.mjs`, Node thuần; thêm `--json` để xuất JSON một dòng; `--agent-dir DIR` nếu cần, mặc định `$CODER_AGENT_DIR` hoặc `<coder>/agent`):
+CLI (`node lib/permissions-cli.mjs`, Node thuần; thêm `--json` để xuất JSON một dòng; `--agent-dir DIR` nếu cần, mặc định `$CODER_AGENT_DIR` hoặc `<mth>/agent`):
 
 | Lệnh | Ý nghĩa |
 |---|---|
@@ -95,8 +95,8 @@ Vòng lặp bot mẫu (-p):
 
 ```js
 import { spawnSync } from "node:child_process";
-const CODER = "/path/to/coder", CLI = ["node", "/path/to/lib/permissions-cli.mjs"];
-const run = (msg) => spawnSync(CODER, ["--mode","json","-p","--model","M","--session-id","job-42","--session-dir","./sessions", msg], { encoding: "utf8" }).stdout;
+const MTH = "/path/to/mth", CLI = ["node", "/path/to/lib/permissions-cli.mjs"];
+const run = (msg) => spawnSync(MTH, ["--mode","json","-p","--model","M","--session-id","job-42","--session-dir","./sessions", msg], { encoding: "utf8" }).stdout;
 let out = run("làm việc X");
 for (let round = 0; round < 5; round++) {
   const pend = JSON.parse(spawnSync(CLI[0], [CLI[1], "pending", "--session", "job-42", "--json"], { encoding: "utf8" }).stdout).pending;
@@ -113,6 +113,6 @@ Lưu ý: duyệt `once` bị tiêu thụ khi lệnh chạy (ghi vào `grants-use
 
 ## 5. Giới hạn
 
-`bash.sandbox` (mảng mẫu lệnh, chỉ cho bash): lệnh đã khớp `allow` mà khớp `bash.sandbox` chỉ tự chạy khi extension phát hiện đang ở trong `coder-sandbox` (`CODER_SANDBOXED=1` do coder-sandbox đặt VÀ `/proc/1/comm` = `bwrap`); ngoài sandbox => ask với `rule: "bash.sandbox"`. Trong sandbox, extension viết lại lệnh khớp `bash.sandbox` thành `<CODER_HOME>/lib/sandbox-exec.sh -- '<lệnh>'` (bwrap lồng: `--unshare-net`, PID ns + /proc mới, `--clearenv` + env allowlist, chính tiến trình bwrap chạy với `env -i`, `$HOME`//tmp tmpfs, agent-dir tmpfs, `.env`/`bots/` bị che, file secret trong workdir theo `isSecretName` tới độ sâu 6 bị che bằng `lib/secret-files.mjs` (bỏ qua node_modules/.git/vendor; liệt kê lỗi => từ chối chạy), `.git` + gitdir/commondir của worktree gắn chỉ-đọc SAU bind rw của workdir); thiếu wrapper => chặn. `bunx *` vẫn nằm trong `bash.sandbox` có chủ ý (phòng thủ nhiều lớp). Luật cứng bunx: chỉ `bunx -p|--package typescript@5.9.3 tsc ...` (đúng phiên bản) hoặc `bunx tsc ...` khi có `node_modules/typescript` cục bộ (realpath trong thư mục làm việc) hoặc đang trong sandbox và có vendor tsc; `bun x` bị cấm; biến `BUN_*` bị cấm gán trước lệnh.
+`bash.sandbox` (mảng mẫu lệnh, chỉ cho bash): lệnh đã khớp `allow` mà khớp `bash.sandbox` chỉ tự chạy khi extension phát hiện đang ở trong `mth-sandbox` (`CODER_SANDBOXED=1` do mth-sandbox đặt VÀ `/proc/1/comm` = `bwrap`); ngoài sandbox => ask với `rule: "bash.sandbox"`. Trong sandbox, extension viết lại lệnh khớp `bash.sandbox` thành `<CODER_HOME>/lib/sandbox-exec.sh -- '<lệnh>'` (bwrap lồng: `--unshare-net`, PID ns + /proc mới, `--clearenv` + env allowlist, chính tiến trình bwrap chạy với `env -i`, `$HOME`//tmp tmpfs, agent-dir tmpfs, `.env`/`bots/` bị che, file secret trong workdir theo `isSecretName` tới độ sâu 6 bị che bằng `lib/secret-files.mjs` (bỏ qua node_modules/.git/vendor; liệt kê lỗi => từ chối chạy), `.git` + gitdir/commondir của worktree gắn chỉ-đọc SAU bind rw của workdir); thiếu wrapper => chặn. `bunx *` vẫn nằm trong `bash.sandbox` có chủ ý (phòng thủ nhiều lớp). Luật cứng bunx: chỉ `bunx -p|--package typescript@5.9.3 tsc ...` (đúng phiên bản) hoặc `bunx tsc ...` khi có `node_modules/typescript` cục bộ (realpath trong thư mục làm việc) hoặc đang trong sandbox và có vendor tsc; `bun x` bị cấm; biến `BUN_*` bị cấm gán trước lệnh.
 
-Đây là kiểm soát ở tầng tool, không phải sandbox: một chương trình đã được allow (ví dụ `node --test`, `python3 -m pytest`) vẫn chạy mã tùy ý (kể cả ghi `.git/config`, hook, `package.json`...). Muốn an toàn thật hãy chạy coder qua `coder-sandbox` (user/container riêng) với `grants/` gắn CHỈ-ĐỌC và CLI duyệt chạy ngoài sandbox. Còn lại: (1) chỉ kiểm tra được `.git/config` của repo ở thời điểm gọi (TOCTOU nhỏ), cấu hình git toàn cục/hệ thống tin tưởng như cũ; (2) `git commit`/`rebase` đã duyệt vẫn chạy hook trong `.git/hooks` (nếu mã trong sandbox đã cài hook); (3) `plan-mode` chỉ chặn đường dẫn secret cơ bản — kiểm tra jail/đọc đầy đủ do `bot-permissions` thực hiện khi cùng được nạp.
+Đây là kiểm soát ở tầng tool, không phải sandbox: một chương trình đã được allow (ví dụ `node --test`, `python3 -m pytest`) vẫn chạy mã tùy ý (kể cả ghi `.git/config`, hook, `package.json`...). Muốn an toàn thật hãy chạy mth qua `mth-sandbox` (user/container riêng) với `grants/` gắn CHỈ-ĐỌC và CLI duyệt chạy ngoài sandbox. Còn lại: (1) chỉ kiểm tra được `.git/config` của repo ở thời điểm gọi (TOCTOU nhỏ), cấu hình git toàn cục/hệ thống tin tưởng như cũ; (2) `git commit`/`rebase` đã duyệt vẫn chạy hook trong `.git/hooks` (nếu mã trong sandbox đã cài hook); (3) `plan-mode` chỉ chặn đường dẫn secret cơ bản — kiểm tra jail/đọc đầy đủ do `bot-permissions` thực hiện khi cùng được nạp.

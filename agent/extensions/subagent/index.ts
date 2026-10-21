@@ -1,5 +1,5 @@
 /**
- * Extension `subagent` (kiểu opencode) cho coder.
+ * Extension `subagent` (kiểu opencode) cho mth.
  *
  * - Tool `subagent` {agent, description, prompt, model?, sessionID?, background?}
  *   chạy một tiến trình agent con với phiên riêng (ngữ cảnh sạch) lưu ở
@@ -21,7 +21,7 @@
  *   strictParent (mặc định true: từ chối resume/status/cancel job thuộc cây khác CHỈ khi cả hai bên có rootId và khác nhau;
  *     thiếu rootId ở một bên (vd. chạy --no-session) thì MỞ, cố ý để không phá luồng --no-session hợp lệ.
  *     "always": chỉ cho phép khi cả hai có rootId và bằng nhau (thiếu root => từ chối); false: tắt)
- *   rootKey (hoặc env CODER_JOB_NAMESPACE): namespace chung cho nhiều lần gọi `coder -p` khác nhau
+ *   rootKey (hoặc env CODER_JOB_NAMESPACE): namespace chung cho nhiều lần gọi `mth -p` khác nhau
  *   retentionDays (mặc định 7: dọn job đã xong quá hạn)
  *
  * Job tách rời được quản lý bằng lib/subagent-cli.mjs (list/status/wait/result/cancel).

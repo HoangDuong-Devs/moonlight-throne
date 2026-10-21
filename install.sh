@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cài đặt/kiểm tra coder (idempotent, chạy lại an toàn).
+# Cài đặt/kiểm tra mth (idempotent, chạy lại an toàn).
 #   ./install.sh            kiểm tra + cài những gì thiếu (clone lõi agent ghim commit, npm install/build, tạo .env)
 #   ./install.sh --check    chỉ kiểm tra, không đổi gì; mã thoát != 0 nếu có mục FAIL
 #   ./install.sh --no-build không npm install/build (vẫn clone lõi agent nếu thiếu)
@@ -34,7 +34,7 @@ else add FAIL node "không tìm thấy (cần >= $MIN)"; fi
 
 # 2. git, bwrap
 if command -v git >/dev/null; then add OK git "$(git --version)"; else add FAIL git "không tìm thấy"; fi
-if command -v bwrap >/dev/null; then add OK bwrap "có (coder-sandbox dùng được)"; else add WARN bwrap "không có: chỉ dùng ./coder, không dùng coder-sandbox"; fi
+if command -v bwrap >/dev/null; then add OK bwrap "có (mth-sandbox dùng được)"; else add WARN bwrap "không có: chỉ dùng ./mth, không dùng mth-sandbox"; fi
 
 # 3. lõi agent ở đúng commit (thư mục ../pi, mục "pi" trong MANIFEST)
 PINNED=""
@@ -58,7 +58,7 @@ elif [ $CHECK = 1 ] || [ $NOBUILD = 1 ]; then add FAIL build "chưa build lõi a
 elif [ ! -d "$ENGINE" ]; then add FAIL build "không có lõi agent để build"
 elif ! command -v npm >/dev/null; then add FAIL build "thiếu npm"
 else
-  LOGDIR="$(mktemp -d "${TMPDIR:-/tmp}/coder-install.XXXXXX")"
+  LOGDIR="$(mktemp -d "${TMPDIR:-/tmp}/mth-install.XXXXXX")"
   echo "Đang npm install (log: $LOGDIR/install.log) ..."
   if (cd "$ENGINE" && npm install --no-audit --no-fund) >"$LOGDIR/install.log" 2>&1; then
     echo "Đang npm run build (log: $LOGDIR/build.log) ..."
@@ -89,7 +89,7 @@ else
 fi
 
 # 6. quyền thực thi
-for f in coder coder-sandbox; do
+for f in mth mth-sandbox; do
   if [ ! -f "$HERE/$f" ]; then add FAIL "$f" "thiếu file"
   elif [ -x "$HERE/$f" ]; then add OK "$f" "có quyền thực thi"
   elif [ $CHECK = 1 ]; then add WARN "$f" "thiếu quyền +x"
@@ -97,18 +97,18 @@ for f in coder coder-sandbox; do
 done
 
 # 7. smoke test (không gọi API)
-if [ -f "$CLI" ] && [ -x "$HERE/coder" ]; then
-  if "$HERE/coder" models </dev/null >/dev/null 2>&1; then add OK "smoke:models" "./coder models chạy được"; else add FAIL "smoke:models" "./coder models lỗi"; fi
-  V="$("$HERE/coder" --version </dev/null 2>/dev/null | head -n1)"
-  if [ -n "$V" ]; then add OK "smoke:version" "$V"; else add FAIL "smoke:version" "./coder --version lỗi"; fi
+if [ -f "$CLI" ] && [ -x "$HERE/mth" ]; then
+  if "$HERE/mth" models </dev/null >/dev/null 2>&1; then add OK "smoke:models" "./mth models chạy được"; else add FAIL "smoke:models" "./mth models lỗi"; fi
+  V="$("$HERE/mth" --version </dev/null 2>/dev/null | head -n1)"
+  if [ -n "$V" ]; then add OK "smoke:version" "$V"; else add FAIL "smoke:version" "./mth --version lỗi"; fi
 else add WARN smoke "bỏ qua (chưa build hoặc thiếu launcher)"; fi
 
 echo
-echo "== Tóm tắt coder install$([ $CHECK = 1 ] && echo ' (--check)') =="
+echo "== Tóm tắt mth install$([ $CHECK = 1 ] && echo ' (--check)') =="
 for r in "${RES[@]}"; do IFS='|' read -r s n d <<< "$r"; printf '%-5s %-14s %s\n' "$s" "$n" "$d"; done
 echo
 if [ $FAILS -gt 0 ]; then echo "Kết quả: $FAILS mục FAIL."; [ $CHECK = 1 ] && echo "Chạy ./install.sh (không --check) để cài phần thiếu."; exit 1; fi
 echo "Kết quả: sẵn sàng."
 echo "Bước tiếp: điền COMMANDCODE_API_KEY / XAI_API_KEY vào $ENVF (hoặc dùng OAuth xAI đã lưu),"
-echo "rồi thử: $HERE/coder -p --model <tên> \"...\"; cấp cấu hình riêng cho từng bot: node $HERE/lib/provision.mjs create <bot>"
+echo "rồi thử: $HERE/mth -p --model <tên> \"...\"; cấp cấu hình riêng cho từng bot: node $HERE/lib/provision.mjs create <bot>"
 exit 0

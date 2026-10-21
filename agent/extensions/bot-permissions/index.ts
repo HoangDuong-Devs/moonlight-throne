@@ -48,7 +48,7 @@ interface Env {
 	agentDir: string;
 	root: string; // realpath của gốc jail
 	cwd: string;
-	sandboxed: boolean; // detectSandbox(): đang chạy trong coder-sandbox (bwrap)
+	sandboxed: boolean; // detectSandbox(): đang chạy trong mth-sandbox (bwrap)
 }
 
 // ---------- kiểm tra đường dẫn ----------
@@ -340,14 +340,14 @@ function checkSegment(seg: Segment, env: Env, state: { cwd: string }, depth: num
 	return checkRedirects();
 }
 
-/** TypeScript ghim CHÍNH XÁC (install.sh cài vào <coder>/vendor; shim bunx trong sandbox lồng dùng bản này, không mạng). */
+/** TypeScript ghim CHÍNH XÁC (install.sh cài vào <CODER_HOME>/vendor; shim bunx trong sandbox lồng dùng bản này, không mạng). */
 export const TS_PINNED = "typescript@5.9.3";
 const vendorTsc = () => (process.env.CODER_HOME ? path.join(process.env.CODER_HOME, "vendor/node_modules/typescript/bin/tsc") : "");
 
 /**
  * Luật cứng cho bunx (không tắt được bằng permissions.json): chỉ 2 dạng
  *   bunx -p|--package typescript@5.9.3 tsc ...   (đúng phiên bản; dải như typescript@5 bị từ chối)
- *   bunx tsc ...   khi có <cwd>/node_modules/typescript nằm trong thư mục làm việc, HOẶC đang trong coder-sandbox và có
+ *   bunx tsc ...   khi có <cwd>/node_modules/typescript nằm trong thư mục làm việc, HOẶC đang trong mth-sandbox và có
  *                  vendor tsc (shim bunx của sandbox lồng trỏ vào đó). Nếu không, bunx sẽ tải gói "tsc" giả trên npm.
  * `bun x` và mọi gói/cờ khác bị chặn.
  */
@@ -379,7 +379,7 @@ function matchesSandboxList(command: string, env: Env): boolean {
 const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
 /**
- * Trong coder-sandbox: lệnh khớp bash.sandbox được viết lại để chạy trong sandbox LỒNG (lib/sandbox-exec.sh: không mạng,
+ * Trong mth-sandbox: lệnh khớp bash.sandbox được viết lại để chạy trong sandbox LỒNG (lib/sandbox-exec.sh: không mạng,
  * env allowlist không key, agent-dir/.env/bots bị che). Trả lý do chặn nếu không bọc được (fail-closed).
  */
 function wrapNested(input: Record<string, unknown>, env: Env): string | null {
@@ -520,10 +520,10 @@ function checkBashString(command: string, env: Env, state: { cwd: string }, dept
 			}
 			const sbPat = env.sandboxed ? undefined : (env.policy.bash.sandbox ?? []).find((pat) => forms.some((f) => matchCommand(pat, f)));
 			if (sbPat) {
-				// lệnh test/build chạy mã tùy ý của repo: ngoài coder-sandbox thì không tự chạy, phải được duyệt
+				// lệnh test/build chạy mã tùy ý của repo: ngoài mth-sandbox thì không tự chạy, phải được duyệt
 				pendingAsk ??= askD(
 					"bash.sandbox",
-					`Lệnh '${scrub(seg.text).slice(0, 100)}' chạy mã của repo (test/build), chỉ tự chạy trong coder-sandbox; đang chạy ngoài sandbox nên cần duyệt (khớp bash.sandbox '${sbPat}')`,
+					`Lệnh '${scrub(seg.text).slice(0, 100)}' chạy mã của repo (test/build), chỉ tự chạy trong mth-sandbox; đang chạy ngoài sandbox nên cần duyệt (khớp bash.sandbox '${sbPat}')`,
 					sbPat,
 				);
 			}

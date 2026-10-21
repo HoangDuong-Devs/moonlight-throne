@@ -1,7 +1,7 @@
 /**
  * plan-mode — chế độ chỉ đọc kiểu agent `plan` của opencode, dùng được cho bot không có người.
  *
- * Bật bằng:  coder --plan ...   hoặc   CODER_PLAN=1 (true/yes/on)   hoặc lệnh /plan (TUI).
+ * Bật bằng:  mth --plan ...   hoặc   CODER_PLAN=1 (true/yes/on)   hoặc lệnh /plan (TUI).
  * Khi bật:
  *  - chỉ kích hoạt tool đọc (read, grep, find, ls, bash chỉ-đọc, todo, question, tool web đọc nếu có);
  *  - hook tool_call chặn mọi tool khác (write, edit, apply_patch, subagent...) kể cả khi bị bật lại bởi extension khác;

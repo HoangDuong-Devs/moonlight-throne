@@ -15,13 +15,13 @@ import { DEFAULT_TIMEOUT_SECONDS, MAX_TIMEOUT_SECONDS, loadConfig, webFetch, web
 const OUTPUT_MAX_AGE_MS = 6 * 3600_000
 const OUTPUT_KEEP = 20
 
-/** Dọn các thư mục coder-webfetch-, coder-websearch- (và pi-web... cũ) (cùng uid, không phải symlink). Best-effort. */
+/** Dọn các thư mục mth-webfetch-, mth-websearch- (và coder-webfetch-/coder-websearch-/pi-web... cũ) (cùng uid, không phải symlink). Best-effort. */
 export async function sweepOutputs(dir: string = tmpdir(), now = Date.now()): Promise<void> {
 	try {
 		const uid = process.getuid?.()
 		const found: { p: string; t: number }[] = []
 		for (const name of await readdir(dir)) {
-			if (!/^(coder|pi)-(webfetch|websearch)-/.test(name)) continue
+			if (!/^(coder|mth|pi)-(webfetch|websearch)-/.test(name)) continue
 			const p = join(dir, name)
 			const st = await lstat(p).catch(() => null)
 			if (!st || !st.isDirectory() || (uid !== undefined && st.uid !== uid)) continue
@@ -39,7 +39,7 @@ async function limit(text: string, prefix: string): Promise<{ text: string; full
 	const t = truncateHead(text, { maxLines: DEFAULT_MAX_LINES, maxBytes: DEFAULT_MAX_BYTES })
 	if (!t.truncated) return { text: t.content, truncated: false }
 	await sweepOutputs()
-	const dir = await mkdtemp(join(tmpdir(), `coder-${prefix}-`)) // mkdtemp tạo 0700
+	const dir = await mkdtemp(join(tmpdir(), `mth-${prefix}-`)) // mkdtemp tạo 0700
 	const fullOutputPath = join(dir, "output.txt")
 	await writeFile(fullOutputPath, text, { encoding: "utf8", mode: 0o600 })
 	return {

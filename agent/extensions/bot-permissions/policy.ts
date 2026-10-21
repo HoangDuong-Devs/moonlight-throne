@@ -11,7 +11,7 @@ export interface Rules {
 	allow: string[];
 	deny: string[];
 	/**
-	 * Chỉ bash: lệnh (đã khớp allow) chạy mã của repo (test/build) => CHỈ tự chạy trong coder-sandbox.
+	 * Chỉ bash: lệnh (đã khớp allow) chạy mã của repo (test/build) => CHỈ tự chạy trong mth-sandbox.
 	 * Ngoài sandbox => ask (rule "bash.sandbox"). Rỗng/không khai báo = không ràng buộc.
 	 */
 	sandbox?: string[];
@@ -146,8 +146,8 @@ export function loadPolicy(agentDir: string): Loaded {
 // ---------- phát hiện sandbox ----------
 
 /**
- * Đang chạy trong coder-sandbox? Cần CẢ HAI: CODER_SANDBOXED=1 (coder-sandbox đặt bằng --setenv sau --clearenv)
- * VÀ PID 1 của namespace là bwrap (coder-sandbox luôn --unshare-pid). Model không đặt được env của tiến trình extension;
+ * Đang chạy trong mth-sandbox? Cần CẢ HAI: CODER_SANDBOXED=1 (mth-sandbox đặt bằng --setenv sau --clearenv)
+ * VÀ PID 1 của namespace là bwrap (mth-sandbox luôn --unshare-pid). Model không đặt được env của tiến trình extension;
  * chỉ đặt biến ở host mà không có namespace bwrap thì vẫn bị coi là NGOÀI sandbox (fail-closed).
  */
 export function detectSandbox(env: NodeJS.ProcessEnv = process.env, readComm: () => string = () => fs.readFileSync("/proc/1/comm", "utf8")): boolean {

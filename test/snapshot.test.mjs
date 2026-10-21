@@ -22,8 +22,8 @@ function fixture() {
 	fs.mkdirSync(work, { recursive: true });
 	fs.mkdirSync(agent, { recursive: true });
 	const ctx = () => openContext({ cwd: work, agentDir: agent, indexName: "cli" });
-	const cli = (args, env = {}) => {
-		const r = spawnSync(process.execPath, [CLI, ...args, "--agent-dir", agent, "--dir", work, "--json"], { encoding: "utf8", env: { ...process.env, ...env } });
+	const cli = (args, env = {}, dir = work) => {
+		const r = spawnSync(process.execPath, [CLI, ...args, "--agent-dir", agent, "--dir", dir, "--json"], { encoding: "utf8", env: { ...process.env, ...env } });
 		let json;
 		try {
 			json = JSON.parse(r.stdout);
@@ -304,5 +304,61 @@ describe("S4: revert không xóa thư mục còn file ngoài snapshot", () => {
 		const r = await revertTo(f.ctx(), first.id);
 		assert.deepEqual(r.errors, []);
 		assert.equal(fs.readFileSync(path.join(f.work, "build"), "utf8"), "file\n");
+	});
+});
+
+describe("S5: tương thích tên nội bộ trên đĩa của kho bóng (giữ tiền tố coder)", () => {
+	test("kho mới dùng coder-cwd + .coder-snapshot-meta.json; kho cũ vẫn chụp/revert/prune được", async () => {
+		const f = fixture();
+		f.w("a.txt", "one\n");
+		const first = await takeSnapshot(f.ctx(), { force: true });
+		const c = f.ctx();
+		// Chuỗi literal (KHÔNG dùng META_FILE) để test bắt được nếu ai đó đổi tên lại.
+		let names = fs.readdirSync(c.gitDir);
+		assert.ok(names.includes("coder-cwd"), `thiếu coder-cwd ở mức gốc: ${names.join(", ")}`);
+		assert.ok(names.includes(".coder-snapshot-meta.json"), `thiếu .coder-snapshot-meta.json ở mức gốc: ${names.join(", ")}`);
+		assert.ok(!names.includes("mth-cwd") && !names.includes(".mth-snapshot-meta.json"), `kho mới chứa tên mth-*: ${names.join(", ")}`);
+
+		// Mô phỏng kho cũ có sẵn: đúng marker tên cũ, lastUsedAt cũ.
+		const oldMarker = () =>
+			fs.writeFileSync(path.join(c.gitDir, ".coder-snapshot-meta.json"), JSON.stringify({ v: 1, cwd: c.cwd, lastUsedAt: new Date(0).toISOString() }) + "\n");
+		oldMarker();
+
+		// Chụp lại qua CLI (đi qua sanitizeRepo phía host), rồi revert về snapshot đầu.
+		f.w("a.txt", "two\n");
+		let r = f.cli(["take"]);
+		assert.equal(r.code, 0, r.stdout + r.stderr);
+		assert.doesNotMatch(r.stderr, /tệp lạ ở mức gốc/, r.stderr);
+		names = fs.readdirSync(c.gitDir);
+		assert.ok(names.includes("coder-cwd") && names.includes(".coder-snapshot-meta.json"), names.join(", "));
+
+		oldMarker();
+		r = f.cli(["revert", first.id]);
+		assert.equal(r.code, 0, r.stdout + r.stderr);
+		assert.doesNotMatch(r.stderr, /tệp lạ ở mức gốc/, r.stderr);
+		assert.equal(fs.readFileSync(path.join(f.work, "a.txt"), "utf8"), "one\n");
+
+		// prune: --dir trỏ thư mục khác để kho này không nằm trong protectKeys.
+		const other = path.join(f.dir, "other");
+		fs.mkdirSync(other);
+		const maybeOld = () => {
+			if (fs.existsSync(path.join(c.gitDir, ".coder-snapshot-meta.json"))) oldMarker();
+		};
+		maybeOld();
+		r = f.cli(["prune", "--days", "0.000001", "--max-mb", "1000000", "--dry-run"], {}, other);
+		assert.equal(r.code, 0, r.stdout + r.stderr);
+		assert.doesNotMatch(r.stderr, /tệp lạ ở mức gốc/, r.stderr);
+		assert.equal(r.json.ok, true);
+		assert.equal(r.json.removed.length, 1, r.stdout);
+		assert.equal(r.json.removed[0].cwd, c.cwd);
+		assert.equal(fs.existsSync(c.gitDir), true, "dry-run phải giữ kho");
+
+		maybeOld();
+		r = f.cli(["prune", "--days", "0.000001", "--max-mb", "1000000"], {}, other);
+		assert.equal(r.code, 0, r.stdout + r.stderr);
+		assert.doesNotMatch(r.stderr, /tệp lạ ở mức gốc/, r.stderr);
+		assert.equal(r.json.ok, true);
+		assert.equal(r.json.removed.length, 1, r.stdout);
+		assert.equal(fs.existsSync(c.gitDir), false, "prune thật phải xóa kho cũ");
 	});
 });

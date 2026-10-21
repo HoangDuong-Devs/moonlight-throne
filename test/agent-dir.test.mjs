@@ -27,7 +27,7 @@ test("resolveAgentDir: không biến nào => mặc định; --agent-dir thắng 
 test("agentEnv: đặt cả CODER_AGENT_DIR và biến nội bộ PI_CODING_AGENT_DIR", () => {
 	assert.deepEqual(agentEnv("/a"), { CODER_AGENT_DIR: "/a", PI_CODING_AGENT_DIR: "/a" });
 });
-const sh = (env) => spawnSync("bash", ["-c", `. "${SH}"; coder_agent_dir /d`], { encoding: "utf8", env: { PATH: process.env.PATH, ...env } });
+const sh = (env) => spawnSync("bash", ["-c", `. "${SH}"; mth_agent_dir /d`], { encoding: "utf8", env: { PATH: process.env.PATH, ...env } });
 test("agent-dir.sh: CODER_AGENT_DIR / legacy + cảnh báo / mặc định", () => {
 	let r = sh({ CODER_AGENT_DIR: "/a", PI_CODING_AGENT_DIR: "/b" });
 	assert.equal(r.stdout.trim(), "/a"); assert.equal(r.stderr, "");
